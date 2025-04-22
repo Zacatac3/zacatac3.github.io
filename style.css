@@ -1,0 +1,42 @@
+body {
+    font-family: sans-serif;
+    line-height: 1.6;
+    margin: 20px;
+    background-color: #f4f4f4;
+    color: #333;
+}
+
+h1 {
+    text-align: center;
+    color: #e74c3c;
+}
+
+#loading {
+    text-align: center;
+    font-style: italic;
+    color: #555;
+}
+
+.brawler-ranking {
+    background-color: #fff;
+    border: 1px solid #ddd;
+    margin-bottom: 15px;
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.brawler-ranking h2 {
+    margin-top: 0;
+    color: #3498db;
+    font-size: 1.2em;
+}
+
+.brawler-ranking p {
+    margin: 5px 0;
+    font-size: 0.9em;
+}
+
+.brawler-ranking p strong {
+    color: #2c3e50;
+}
