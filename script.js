@@ -1,19 +1,19 @@
 const http = require('http');
-const https = require('https');
+const https = require('https'); // Use https for the Brawl Stars API
+const fs = require('fs');
+const path = require('path');
 const url = require('url');
 
-// !!! WARNING: API Key is hardcoded for temporary testing.
-// !!! DO NOT use this in production or share this file publicly.
-const BRAWL_STARS_API_KEY = 'YOUR_API_KEY_HERE'; // <-- REPLACE WITH YOUR ACTUAL API KEY
-
-if (BRAWL_STARS_API_KEY === 'YOUR_API_KEY_HERE' || !BRAWL_STARS_API_KEY) {
-    console.error("!!! WARNING: Please replace 'YOUR_API_KEY_HERE' with your actual Brawl Stars API Key.");
-    console.error("!!! This method of storing the key is INSECURE and for local testing only.");
-}
-
 const port = process.env.PORT || 3000;
+const API_KEY = process.env.BRAWL_STARS_API_KEY; // Read from environment variable
 const BASE_URL = 'https://api.brawlstars.com/v1';
 const API_HOSTNAME = 'api.brawlstars.com';
+
+if (!API_KEY) {
+    console.error("Error: BRAWL_STARS_API_KEY environment variable not set.");
+    console.error("Please run the server like: BRAWL_STARS_API_KEY=YOUR_API_KEY_HERE node server.js");
+    process.exit(1);
+}
 
 // Helper function to make HTTPS requests (replaces axios.get)
 function makeApiRequest(apiPath) {
@@ -23,18 +23,20 @@ function makeApiRequest(apiPath) {
             path: apiPath,
             method: 'GET',
             headers: {
-                'Authorization': `Bearer ${BRAWL_STARS_API_KEY}`,
-                'User-Agent': 'BrawlStarsRankingsApp/1.0 (Single Script Example)'
+                'Authorization': `Bearer ${API_KEY}`,
+                'User-Agent': 'BrawlStarsRankingsApp/1.0 (No Dependencies Example)' // Good practice to include User-Agent
             }
         };
 
         const req = https.request(options, (res) => {
             let data = '';
 
+            // A chunk of data has been received.
             res.on('data', (chunk) => {
                 data += chunk;
             });
 
+            // The whole response has been received. Parse the data.
             res.on('end', () => {
                 if (res.statusCode >= 200 && res.statusCode < 300) {
                     try {
@@ -43,22 +45,23 @@ function makeApiRequest(apiPath) {
                         reject(new Error(`Failed to parse JSON from ${apiPath}: ${parseError.message}`));
                     }
                 } else {
+                    // Handle HTTP errors
                      let errorMsg = `HTTP Error ${res.statusCode} fetching ${apiPath}`;
                      try {
                          const errorJson = JSON.parse(data);
                          if(errorJson.message) errorMsg += `: ${errorJson.message}`;
                      } catch {} // Ignore parsing errors on error responses
-                     const error = new Error(errorMsg);
-                     error.statusCode = res.statusCode; // Attach status code
-                     reject(error);
+                     reject(new Error(errorMsg));
                 }
             });
         });
 
+        // Handle request errors
         req.on('error', (e) => {
             reject(new Error(`Request Error fetching ${apiPath}: ${e.message}`));
         });
 
+        // End the request (for GET, no body to send)
         req.end();
     });
 }
@@ -70,7 +73,31 @@ const server = http.createServer(async (req, res) => {
 
     console.log(`${req.method} ${pathname}`);
 
-    // We only handle the API endpoint in this simplified version
+    // Serve static files from the 'public' directory
+    if (req.method === 'GET' && pathname.startsWith('/') && pathname !== '/api/brawler-rankings') {
+        const filePath = path.join(__dirname, 'public', pathname === '/' ? 'index.html' : pathname);
+        const ext = path.extname(filePath);
+        const contentType = {
+            '.html': 'text/html',
+            '.css': 'text/css',
+            '.js': 'text/javascript',
+            // Add more content types as needed (e.g., for images)
+        }[ext] || 'application/octet-stream'; // Default to binary if unknown
+
+        fs.readFile(filePath, (err, data) => {
+            if (err) {
+                console.error(`Error serving static file ${filePath}:`, err.message);
+                res.writeHead(404, { 'Content-Type': 'text/plain' });
+                res.end('Not Found');
+            } else {
+                res.writeHead(200, { 'Content-Type': contentType });
+                res.end(data);
+            }
+        });
+        return; // Stop further processing for static files
+    }
+
+    // Handle the API endpoint
     if (req.method === 'GET' && pathname === '/api/brawler-rankings') {
         try {
             // 1. Get list of all brawlers
@@ -80,7 +107,9 @@ const server = http.createServer(async (req, res) => {
             const results = {};
             const targetRank = 200;
 
-             // Fetch rankings for each brawler sequentially to be safer with rate limits
+            // 2. Fetch rankings for each brawler sequentially (to be safer with rate limits)
+            // Concurrency with native http/s is more complex, sequential is simpler here.
+            // If you need concurrency, you'd manage multiple promises.
             for (const brawler of brawlers) {
                 try {
                     console.log(`Fetching rankings for ${brawler.name}...`);
@@ -110,6 +139,7 @@ const server = http.createServer(async (req, res) => {
                             trophies: 'Error',
                         };
                     }
+
                     // Optional: Add a small delay between requests to mitigate rate limits
                     // await new Promise(resolve => setTimeout(resolve, 200)); // Add 200ms delay per brawler
 
@@ -124,28 +154,27 @@ const server = http.createServer(async (req, res) => {
                 }
             }
 
-            // Send the compiled results back as JSON
+            // Send the compiled results back to the frontend
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify(results));
 
         } catch (error) {
             console.error("Error in API endpoint:", error.message);
-            // Send an error response
-            res.writeHead(error.statusCode || 500, { 'Content-Type': 'application/json' });
+             // Send an error response to the frontend
+            res.writeHead(500, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: `Failed to fetch Brawl Stars data: ${error.message}` }));
         }
         return; // Stop further processing
     }
 
-    // Handle requests for anything else (like '/' or non-API paths)
-    res.writeHead(200, { 'Content-Type': 'text/plain' }); // Just send plain text for simplicity
-    res.end('Visit /api/brawler-rankings in your browser or a tool like Postman to see the data.');
-
+    // Handle 404 for other paths
+    res.writeHead(404, { 'Content-Type': 'text/plain' });
+    res.end('Not Found');
 });
 
 // Start the server
 server.listen(port, () => {
     console.log(`Server running at http://localhost:${port}`);
-    console.log('API endpoint available at http://localhost:3000/api/brawler-rankings');
-    console.log('!!! REMINDER: API Key is hardcoded - for local testing only!');
+    console.log(`Serving static files from ${path.join(__dirname, 'public')}`);
+    console.log(`API Key Status: ${API_KEY ? 'Loaded' : 'Missing - Server will not fetch data!'}`);
 });
