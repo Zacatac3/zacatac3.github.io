@@ -1,0 +1,26 @@
+:root{
+  --accent:#0b6cff;
+  --bg:#f7fbff;
+  --text:#062743;
+}
+*{box-sizing:border-box}
+body{font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;line-height:1.4;color:var(--text);background:var(--bg);margin:0}
+.container{max-width:920px;margin:0 auto;padding:28px}
+.site-header{background:linear-gradient(180deg,var(--accent),#0a58d9);color:#fff;padding:36px 0;text-align:center}
+.site-header h1{margin:0;font-size:32px;letter-spacing:-0.5px}
+.tagline{opacity:0.95;margin:8px 0 0}
+.note{opacity:0.9;font-size:13px}
+.btn{display:inline-block;background:#fff;color:var(--accent);padding:10px 16px;border-radius:10px;text-decoration:none;font-weight:600}
+.btn.ghost{background:transparent;color:#123;margin-top:6px;border:2px solid rgba(0,0,0,0.06)}
+main{padding:28px 0}
+h2{margin-top:0}
+.features ul{padding-left:18px}
+.widget-preview{max-width:420px;border-radius:12px;overflow:hidden;box-shadow:0 6px 30px rgba(11,108,255,0.12);}
+.download .btn{background:var(--accent);color:#fff}
+.footer{margin-top:36px;padding-top:18px;border-top:1px solid rgba(2,6,23,0.06);font-size:14px;color:#3b4b58}
+
+@media(min-width:720px){
+  .container{padding:48px}
+  .site-header{padding:56px 0}
+  .site-header h1{font-size:40px}
+}
