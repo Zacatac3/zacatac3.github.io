@@ -8,6 +8,7 @@ body{font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica
 .container{max-width:920px;margin:0 auto;padding:28px}
 .site-header{background:linear-gradient(180deg,var(--accent),#0a58d9);color:#fff;padding:36px 0;text-align:center}
 .site-header h1{margin:0;font-size:32px;letter-spacing:-0.5px}
+.site-header .app-icon{width:88px;height:88px;border-radius:18px;display:block;margin:0 auto 12px;box-shadow:0 8px 22px rgba(11,108,255,0.18)}
 .tagline{opacity:0.95;margin:8px 0 0}
 .note{opacity:0.9;font-size:13px}
 .btn{display:inline-block;background:#fff;color:var(--accent);padding:10px 16px;border-radius:10px;text-decoration:none;font-weight:600}
@@ -17,6 +18,7 @@ h2{margin-top:0}
 .features ul{padding-left:18px}
 .widget-preview{max-width:420px;border-radius:12px;overflow:hidden;box-shadow:0 6px 30px rgba(11,108,255,0.12);}
 .download .btn{background:var(--accent);color:#fff}
+.app-badge{max-width:260px;display:inline-block}
 .footer{margin-top:36px;padding-top:18px;border-top:1px solid rgba(2,6,23,0.06);font-size:14px;color:#3b4b58}
 
 @media(min-width:720px){
