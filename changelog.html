@@ -6,7 +6,7 @@
         <title>Privacy Policy - Clashboard</title>
         <link rel="stylesheet" href="/css/styles.css">
         <style>
-            .policy-container{max-width:880px;margin:36px auto;padding:24px;background:#fff;border-radius:12px;box-shadow:0 8px 30px rgba(2,6,23,0.06);}
+            .policy-container{max-width:880px;margin:36px auto;padding:0 24px;background:transparent;border-radius:0;box-shadow:none;} 
             .policy-container h1{margin-top:0}
             .changelog-header h1{margin:0;line-height:1.1}
             .policy-meta{color:#516276;margin-bottom:18px}
@@ -20,17 +20,80 @@
                 .changelog-icon{width:36px;height:36px}
                 .changelog-header{gap:10px}
             }
+
+            .update-container{
+                background:#fff;
+                border-radius:12px;
+                padding:20px;
+                margin:18px 0;
+                box-shadow:0 6px 20px rgba(2,6,23,0.05);
+            }
+            .update-container h2{margin-top:0}
+            .update-container .policy-section{margin-top:8px}
+
+            .header-box{
+                background:#fff;
+                border-radius:12px;
+                padding:18px 20px;
+                margin:0 0 18px 0;
+                box-shadow:0 6px 20px rgba(2,6,23,0.05);
+            }
+            .header-box .changelog-header{margin-bottom:0}
+            .header-box .policy-meta{margin:0;color:#516276}
+ 
         </style>
     </head>
     <body>
         <main class="policy-container">
+            <section class="header-box">
             <div class="changelog-header">
                 <img src="/assets/icon.png" alt="Clashboard icon" class="changelog-icon">
                 <h1>Clashboard Changelog</h1>
             </div>
-            <p class="policy-meta">Last Updated: January 27, 2026</p>
+            <p class="policy-meta">Last Updated: February 2, 2026</p>
+            </section> 
 
-            <div class="policy-section">
+            <section class="update-container">
+                <div class="policy-section">
+                <h2>1.1 — 2/xx/26</h2>
+                <p><strong>Major Quality of Life + feature Update</strong></p>
+
+                <h3>New Features &amp; Additions</h3>
+                <ul>
+                    <li>Helpers now only send one notification for all helpers</li>
+                    <li>Added helper gem cost section to profile</li>
+                    <li>When editing the home page, you can now hide individual sections</li>
+                    <li>Added toggle to open Clash of Clans directly when tapping on notification</li>
+                    <li>Notifications now specify which profile the upgrade is for</li>
+                    <li>New setting to "Pre-Notify" a few minutes before upgrades are done</li>
+                    <li>New Current War home screen module</li>
+                    <li>Clan stats added in profile tab</li>
+                    <li>Lock screen widgets for upgrades</li>
+                    <li>Added boosts menu (helpers, potions, and snacks)</li>
+                    <li>Profile page cards now re-orderable</li>
+                    <li>Added new setting to display precise timers</li>
+                </ul>
+
+                <h3>Changes &amp; Bug Fixes</h3>
+                <ul>
+                    <li>Import button now taller to avoid miss taps</li>
+                    <li>Widgets now display profile names</li>
+                    <li>Check mark and (...) button swapped in profile settings</li>
+                    <li>User now prompted to modify paste settings after first import</li>
+                    <li>Split notification settings by global vs profile specific settings</li>
+                    <li>New import status visual confirmation</li>
+                    <li>Tapping a notification now automatically switches to the profile the notification was for</li>
+                    <li>Updated profile gradient handling</li>
+                    <li>Removed achievements section, not fully present in the API and inconsistent results</li>
+                    <li>Widgets now have profile name labels</li>
+                    <li>Fixed Town Hall level not updating with import (causing icon and wall levels to be messed up)</li>
+                    <li>Made toggle colors consistent in the settings menu</li>
+                </ul>
+                </div>
+            </section>
+
+            <section class="update-container">
+                <div class="policy-section">
                 <h2>1.0.3 — 1/27/2026</h2>
                 <p><strong>Main Fix</strong> — Widgets should now work on all iOS/iPadOS versions and devices.</p>
 
@@ -43,9 +106,11 @@
                     <li>Wall costs now scale with gold pass.</li>
                     <li>Changed Hero levels and Town Hall level to draw from import instead of API, for edge case scenarios </li>
                 </ul>
-            </div>
+                </div>
+            </section>
 
-            <div class="policy-section">
+            <section class="update-container">
+                <div class="policy-section">
                 <h2>1.0.2 — 1/27/2026</h2>
                 <p><strong>Hot fix Update</strong> — post launch hot fix, including many fixes, and some new features.</p>
 
@@ -72,9 +137,11 @@
                     <li>4 builders now makes the widget 2x2 for better looks.</li>
                     <li>Added notifications for helpers.</li>
                 </ul>
-            </div>
+                </div>
+            </section>
 
-            <div class="policy-section">
+            <section class="update-container">
+                <div class="policy-section">
                 <h2>1.0.1</h2>
                 <p><strong>Hot fix Update</strong> — includes updates and improvements, fixing minor bugs and improving the new user experience.</p>
 
@@ -97,13 +164,15 @@
                     <li>Fixed app icon not tinting for dark clear and tinted modes.</li>
                     <li>Changed display name for app/widgets from "clash_widgets" to production name "Clashboard".</li>
                 </ul>
-            </div>
+                </div>
+            </section>
 
-            <div class="policy-section">
+            <section class="update-container">
+                <div class="policy-section">
                 <h2>1.0</h2>
                 <p>Release version of Clashboard. Thank you for using the app!</p>
-            </div>
-            </div>
+                </div>
+            </section>
         </main>
     </body>
 </html>
