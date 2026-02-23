@@ -5,27 +5,52 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Clashboard — Clash of Clans upgrade widgets</title>
   <meta name="description" content="Clashboard: iOS widgets to track your Clash of Clans upgrades from the Home Screen." />
-  <link rel="stylesheet" href="css/styles.css">
-  <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
-  <link rel="shortcut icon" href="assets/icon.svg">
-  <meta name="msapplication-TileImage" content="assets/icon.svg">
-  <link rel="apple-touch-icon" href="assets/icon.png">
+  <link rel="stylesheet" href="/css/styles.css">
+  <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
+  <link rel="shortcut icon" href="/assets/icon.svg">
+  <meta name="msapplication-TileImage" content="/assets/icon.svg">
+  <link rel="apple-touch-icon" href="/assets/icon.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Clashboard">
   <meta name="theme-color" content="#0b6cff">
 </head>
 <body>
-  <header class="site-header">
-        <img src="assets/icon.png" alt="Clashboard icon" class="app-icon">
-      <h1>Clashboard</h1>
-      <p class="tagline">Track Clash of Clans upgrades with beautiful iOS Home Screen widgets.</p>
-      <p class="note">iOS-only • Widgets for Home Screen</p>
-      <p><a class="btn" href="#download">Download (App Store)</a></p>
+  <header class="top-nav">
+    <div class="nav-inner">
+      <a class="nav-brand" href="/index.html">
+        <img src="/assets/icon.png" alt="Clashboard icon" class="nav-logo">
+        <span>Clashboard</span>
+      </a>
+      <input type="checkbox" id="nav-toggle" class="nav-toggle">
+      <label for="nav-toggle" class="nav-toggle-label" aria-label="Toggle navigation">
+        <span></span>
+        <span></span>
+        <span></span>
+      </label>
+      <nav class="nav-links">
+        <a href="/index.html">Home</a>
+        <a href="/changelog.html">Changelog</a>
+        <a href="/privacy.html">Privacy</a>
+        <a href="/feedback.html">Feedback</a>
+      </nav>
+      <label for="nav-toggle" class="nav-overlay" aria-hidden="true"></label>
     </div>
   </header>
 
-  <main class="container">
-    <section class="hero-features">
+  <main class="policy-container">
+    <section class="header-box">
+      <div class="changelog-header">
+        <img src="/assets/icon.png" alt="Clashboard icon" class="changelog-icon">
+        <div>
+          <h1>Clashboard</h1>
+          <p class="tagline">Track Clash of Clans upgrades with beautiful iOS Home Screen widgets.</p>
+          <p class="note">iOS-only • Widgets for Home Screen</p>
+        </div>
+      </div>
+      <p><a class="btn" href="#download">Download (App Store)</a></p>
+    </section>
+
+    <section class="update-container">
       <h2>Clashboard — The Ultimate Clash of Clans Companion</h2>
       <p class="lead">Stay ahead in Clash of Clans with Clashboard, the tracking and management app designed for players who want full control over upgrades and progression.</p>
 
@@ -70,27 +95,26 @@
           <p>Rearrange your home tab for quick access to what matters most to you.</p>
         </article>
       </div>
+    </section>
 
+    <section class="update-container">
       <h3>Quick Usage</h3>
       <ol>
         <li>Install Clashboard from the App Store.</li>
         <li>Add your village(s) or connect via API.</li>
         <li>Long-press the Home Screen → + → choose Clashboard widget and select size.</li>
       </ol>
+    </section>
 
-      
+    <section id="download" class="update-container">
+      <h2>Get Clashboard</h2>
+      <p><a class="btn" href="https://apps.apple.com/app/id6758178681">Open on the App Store</a></p>
+    </section>
 
-      <section id="download" class="download">
-        <h2>Get Clashboard</h2>
-        </p>
-        <p><a class="btn" href="https://apps.apple.com/app/id6758178681">Open on the App Store</a></p>
-      </section>
-
-      <section id="feedback" class="feedback">
-        <h2>Feedback & Support</h2>
-        <p>Report bugs, request features, and help shape Clashboard via the in-app feedback form (Settings → Feedback) or the public feedback form below.</p>
-        <p><a class="btn ghost" href="https://forms.gle/E7h9kETSokcZLior7" target="_blank" rel="noopener">Open Feedback Form</a></p>
-      </section>
+    <section id="feedback" class="update-container">
+      <h2>Feedback & Support</h2>
+      <p>Report bugs, request features, and help shape Clashboard via the in-app feedback form (Settings → Feedback) or the public feedback form below.</p>
+      <p><a class="btn ghost" href="https://forms.gle/E7h9kETSokcZLior7" target="_blank" rel="noopener">Open Feedback Form</a></p>
     </section>
 
     <footer class="footer">

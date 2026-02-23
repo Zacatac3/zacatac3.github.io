@@ -2,15 +2,83 @@
   --accent:#0b6cff;
   --bg:#f7fbff;
   --text:#062743;
+  --surface:#ffffff;
+  --muted:#516276;
+  --shadow:0 6px 20px rgba(2,6,23,0.05);
+  --shadow-lg:0 8px 30px rgba(2,6,23,0.06);
 }
 *{box-sizing:border-box}
 body{font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;line-height:1.4;color:var(--text);background:var(--bg);margin:0}
+a{color:inherit}
+
 .container{max-width:920px;margin:0 auto;padding:28px}
+.policy-container{max-width:880px;margin:36px auto;padding:0 24px;background:transparent}
+.policy-meta{color:var(--muted);margin-bottom:18px}
+.policy-section{margin-top:18px}
+.policy-section p{margin:8px 0}
+.policy-link{color:var(--accent)}
+
+.header-box{
+  background:var(--surface);
+  border-radius:12px;
+  padding:18px 20px;
+  margin:0 0 18px 0;
+  box-shadow:var(--shadow);
+}
+.header-box .policy-meta{margin:0}
+
+.changelog-header{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+.changelog-header h1{margin:0;line-height:1.1}
+.changelog-icon{width:48px;height:48px;object-fit:cover;border-radius:8px;display:block;align-self:center}
+
+.update-container{
+  background:var(--surface);
+  border-radius:12px;
+  padding:20px;
+  margin:18px 0;
+  box-shadow:var(--shadow);
+}
+.update-container h2{margin-top:0}
+.update-container .policy-section{margin-top:8px}
+
+.top-nav{
+  background:var(--surface);
+  box-shadow:0 4px 16px rgba(2,6,23,0.06);
+  position:sticky;
+  top:0;
+  z-index:10;
+}
+.nav-inner{
+  max-width:920px;
+  margin:0 auto;
+  padding:12px 20px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  position:relative;
+}
+.nav-brand{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:700;color:var(--text)}
+.nav-logo{width:32px;height:32px;border-radius:8px;box-shadow:0 4px 14px rgba(11,108,255,0.18)}
+.nav-links{display:flex;align-items:center;gap:16px}
+.nav-links a{text-decoration:none;color:var(--text);font-weight:600;padding:6px 8px;border-radius:8px}
+.nav-links a:hover{background:rgba(11,108,255,0.08)}
+.nav-overlay{display:none;z-index:10}
+
+.nav-toggle{display:none}
+.nav-toggle-label{display:none;flex-direction:column;gap:5px;cursor:pointer}
+.nav-toggle-label span{width:24px;height:2px;background:var(--text);display:block;border-radius:2px}
+
 .site-header{background:linear-gradient(180deg,var(--accent),#0a58d9);color:#fff;padding:36px 0;text-align:center}
 .site-header h1{margin:0;font-size:32px;letter-spacing:-0.5px}
 .site-header .app-icon{width:88px;height:88px;border-radius:18px;display:block;margin:0 auto 12px;box-shadow:0 8px 22px rgba(11,108,255,0.18)}
 .tagline{opacity:0.95;margin:8px 0 0}
 .note{opacity:0.9;font-size:13px}
+.lead{font-size:1.05rem;color:#284157}
+
+.feature-grid{display:grid;gap:16px;margin:16px 0 24px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.card{background:var(--surface);border-radius:12px;padding:16px;box-shadow:var(--shadow)}
+
 .btn{display:inline-block;background:#fff;color:var(--accent);padding:10px 16px;border-radius:10px;text-decoration:none;font-weight:600}
 .btn.ghost{background:transparent;color:#123;margin-top:6px;border:2px solid rgba(0,0,0,0.06)}
 main{padding:28px 0}
@@ -21,8 +89,41 @@ h2{margin-top:0}
 .app-badge{max-width:260px;display:inline-block}
 .footer{margin-top:36px;padding-top:18px;border-top:1px solid rgba(2,6,23,0.06);font-size:14px;color:#3b4b58}
 
+@media(max-width:720px){
+  .nav-toggle-label{display:flex}
+  .nav-links{
+    display:none;
+    position:absolute;
+    top:100%;
+    left:0;
+    right:0;
+    background:var(--surface);
+    flex-direction:column;
+    align-items:flex-start;
+    padding:12px 20px 16px;
+    box-shadow:0 12px 24px rgba(2,6,23,0.08);
+    z-index:11;
+  }
+  .nav-toggle:checked ~ .nav-links{display:flex}
+  .nav-toggle:checked ~ .nav-overlay{
+    display:block;
+    position:fixed;
+    inset:0;
+    background:transparent;
+    pointer-events:auto;
+  }
+  .nav-overlay{
+    pointer-events:none;
+  }
+}
+
 @media(min-width:720px){
   .container{padding:48px}
   .site-header{padding:56px 0}
   .site-header h1{font-size:40px}
+}
+
+@media (max-width:480px){
+  .changelog-icon{width:36px;height:36px}
+  .changelog-header{gap:10px}
 }

@@ -1,0 +1,136 @@
+{
+  "entries": [
+    {
+      "version": "1.1",
+      "date": "2/08/26",
+      "description": "Major Quality of Life + feature Update",
+      "sections": [
+        {
+          "title": "New Features & Additions",
+          "items": [
+            "Helpers now only send one notification for all helpers",
+            "Added helper gem cost section to profile",
+            "When editing the home page, you can now hide individual sections",
+            "Added toggle to open Clash of Clans directly when tapping on notification",
+            "Notifications now specify which profile the upgrade is for",
+            "New setting to \"Pre-Notify\" a few minutes before upgrades are done",
+            "New Current War home screen module",
+            "Clan stats added in profile tab",
+            "Lock screen widgets for upgrades",
+            "Added boosts menu (helpers, potions, and snacks)",
+            "Profile page cards now re-orderable",
+            "Added new setting to display precise timers",
+            "Added Support for the new \"Stick Horse\" equipment",
+            "helpers can now be refreshed without re-importing player data"
+          ]
+        },
+        {
+          "title": "Changes & Bug Fixes",
+          "items": [
+            "Import button now taller to avoid miss taps",
+            "Widgets now display profile names",
+            "Check mark and (...) button swapped in profile settings",
+            "User now prompted to modify paste settings after first import",
+            "Split notification settings by global vs profile specific settings",
+            "New import status visual confirmation",
+            "Tapping a notification now automatically switches to the profile the notification was for",
+            "Updated profile gradient handling",
+            "Removed achievements section, not fully present in the API and inconsistent results",
+            "Widgets now have profile name labels",
+            "Fixed Town Hall level not updating with import (causing icon and wall levels to be messed up)",
+            "Made toggle colors consistent in the settings menu",
+            "fixed cumulative wall cost not factoring in intermediate levels",
+            "Added \"Done\" button to feedback form, preventing users from getting stuck on the page",
+            "Ensure goblin builder no longer shows \"1 builder remaining\" when all builders are being used"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "1.0.3",
+      "date": "1/27/2026",
+      "description": "Main Fix — Widgets should now work on all iOS/iPadOS versions and devices.",
+      "sections": [
+        {
+          "title": "Fixes & Improvements",
+          "items": [
+            "Added EU consent form.",
+            "Fixed league icons naming error.",
+            "Fixed hero levels in the profile tab not being relevant to current Town Hall.",
+            "Wall costs now display billions properly.",
+            "Wall costs now scale with gold pass.",
+            "Changed Hero levels and Town Hall level to draw from import instead of API, for edge case scenarios"
+          ]
+        }
+      ]
+    },
+    {
+      "version": "1.0.2",
+      "date": "1/27/2026",
+      "description": "Hot fix Update — post launch hot fix, including many fixes, and some new features.",
+      "sections": [
+        {
+          "title": "New Features",
+          "items": [
+            "Widgets now allow for displaying both most recent profile as well as a specific profile.",
+            "Walls section in the home screen showing remaining wall costs."
+          ]
+        },
+        {
+          "title": "Fixes & Improvements",
+          "items": [
+            "Helper timers now increment on the widget and home page.",
+            "Gold pass reminder no longer occurs before first season reset.",
+            "Added \"Full Changelog\" button to what's new.",
+            "Swapped places of \"Import Data\" and profile switcher.",
+            "Added \"Open Game Settings\" button to home and profile setup.",
+            "Split onboarding into two pages for simplicity.",
+            "Added detailed instructions to onboarding; improved flow.",
+            "Goblin builder no longer breaks widgets, now displays the 6 shortest upgrades.",
+            "Widgets should look the same across screen sizes.",
+            "Better asset fallback to prevent missing assets in almost all cases.",
+            "Widgets are now better with longer troop/building names.",
+            "Lowered iOS requirement to iOS 18.0.",
+            "4 builders now makes the widget 2x2 for better looks.",
+            "Added notifications for helpers."
+          ]
+        }
+      ]
+    },
+    {
+      "version": "1.0.1",
+      "date": "1/25/2026",
+      "description": "Hot fix Update — includes updates and improvements, fixing minor bugs and improving the new user experience.",
+      "sections": [
+        {
+          "title": "New Features",
+          "items": [
+            "Notification preferences added to onboarding and new profile set-up."
+          ]
+        },
+        {
+          "title": "Fixes & Improvements",
+          "items": [
+            "Fixed interstitial ads showing up immediately following IAP.",
+            "Fixed \"what's new\" pop up appearing erroneously — now shows on second app boot and when new builds are published.",
+            "Fixed \"what's new\" splash displaying in user onboarding instead of the \"welcome\" page.",
+            "Changed icon for splash screen from (!) to (?) and set default page to \"welcome\".",
+            "Added restore error message for no contents to restore.",
+            "Added help section to onboarding.",
+            "App no longer prompts for notifications immediately; waits for user to enable notifications.",
+            "Notification settings now part of new profile set-up.",
+            "Unranked icon now displays properly in profile tab.",
+            "Fixed app icon not tinting for dark clear and tinted modes.",
+            "Changed display name for app/widgets from \"clash_widgets\" to production name \"Clashboard\"."
+          ]
+        }
+      ]
+    },
+    {
+      "version": "1.0",
+      "date": "1/23/2026",
+      "description": "Release version of Clashboard. Thank you for using the app!",
+      "sections": []
+    }
+  ]
+}
