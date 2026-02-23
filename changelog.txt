@@ -29,6 +29,7 @@ Heading: Changes and Fixes
 - Town hall 18 now shows the correct number of walls that can be upgraded to max
 - Inferno artillery support added, previously acted like town hall upgrade
 - App website visual update 
+- Heroes in the profile and equipment tab now are in unlock order (instead of alphabetical)
 
 ===
 
