@@ -30,6 +30,7 @@ Heading: Changes and Fixes
 - Inferno artillery support added, previously acted like town hall upgrade
 - App website visual update 
 - Heroes in the profile and equipment tab now are in unlock order (instead of alphabetical)
+- API refresh timer now per profile instead of global
 
 ===
 
