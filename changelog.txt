@@ -1,3 +1,20 @@
+Title: 1.2.1 - 4/27/26
+
+Description: Added new update content & minor fixes
+
+Heading: Changes and Fixes
+*Changes and Fixes*
+- Added support for the new Elecro Fangs, Sky Wagon, and Logger
+- Update cost and time reductions added
+- Added missing asset for rocket backpack for dragon Duke
+- Greedy Raven now correctly named, no longer shows up as "crow"
+- builder base section now displays idle builders instead of nothing
+- Fixed the walls section showing "All walls Maxed" erroneously
+- updated max wall count for TH18
+- cleaned up various text blocks around the app
+
+===
+
 Title: 1.2 – 2/23/26
 
 Description: Under the Hood Improvements & New Game Update contents
