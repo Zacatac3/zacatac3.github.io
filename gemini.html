@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ASCII City on a Hill</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #050508;
+            color: #00ffcc;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #ascii-container {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 11px;
+            line-height: 11px;
+            white-space: pre;
+            user-select: none;
+            text-shadow: 0 0 5px rgba(0, 255, 204, 0.4);
+        }
+
+        /* Subtle glow effect for the "lights" */
+        .highlight {
+            color: #fff;
+            text-shadow: 0 0 8px #fff;
+        }
+    </style>
+</head>
+<body>
+    <div id="ascii-container"></div>
+
+    <script>
+        const container = document.getElementById('ascii-container');
+        let width, height;
+        let grid = [];
+        let frameCount = 0;
+
+        // Configuration
+        const CHARS = {
+            empty: ' ',
+            star: ['.', '*', '+', ' '],
+            hill: ['/', '\\', '_', ',', '.', 'm', 'w'],
+            building: ['|', '-', '+', '#', '!', '[', ']', '=', 'H'],
+            cloud: ['(', ')', '~']
+        };
+
+        function init() {
+            width = Math.floor(window.innerWidth / 7);
+            height = Math.floor(window.innerHeight / 11);
+            container.style.width = window.innerWidth + 'px';
+            container.style.height = window.innerHeight + 'px';
+        }
+
+        function createBuffer() {
+            return Array.from({ length: height }, () => Array(width).fill(CHARS.empty));
+        }
+
+        function getHillHeight(x) {
+            // A composite sine wave to create a natural-looking hill
+            const base = height * 0.7;
+            const wave1 = Math.sin(x * 0.05) * 10;
+            const wave2 = Math.sin(x * 0.02) * 5;
+            return Math.floor(base - wave1 - wave2);
+        }
+
+        function drawStars(buffer) {
+            for (let i = 0; i < 40; i++) {
+                const x = (Math.floor(Math.random() * width) + frameCount / 20) % width;
+                const y = Math.floor(Math.random() * (height * 0.5));
+                const char = CHARS.star[Math.floor(Math.random() * CHARS.star.length)];
+                if (buffer[y] && buffer[y][Math.floor(x)] === CHARS.empty) {
+                    buffer[y][Math.floor(x)] = char;
+                }
+            }
+        }
+
+        function drawClouds(buffer) {
+            const cloudPositions = [
+                { x: (frameCount * 0.1) % (width + 20) - 20, y: 10, w: 15 },
+                { x: ((frameCount * 0.08) + 50) % (width + 20) - 20, y: 5, w: 10 },
+                { x: ((frameCount * 0.12) + 120) % (width + 20) - 20, y: 15, w: 12 }
+            ];
+
+            cloudPositions.forEach(c => {
+                for (let dx = 0; dx < c.w; dx++) {
+                    const x = Math.floor(c.x + dx);
+                    if (x >= 0 && x < width) {
+                        const y = c.y + Math.floor(Math.sin(dx * 0.5) * 2);
+                        buffer[y][x] = CHARS.cloud[Math.floor(Math.random() * 3)];
+                    }
+                }
+            });
+        }
+
+        function drawBuildings(buffer) {
+            // Draw buildings along the hill
+            for (let x = 10; x < width - 10; x += 6) {
+                const ground = getHillHeight(x);
+                const bWidth = 4;
+                const bHeight = 5 + Math.floor(Math.random() * 12);
+                
+                // Only place buildings on the "upper" part of the hill for aesthetic
+                if (x % 14 < 10) {
+                    for (let h = 0; h < bHeight; h++) {
+                        for (let w = 0; w < bWidth; w++) {
+                            const curY = ground - h;
+                            const curX = x + w;
+                            if (curY >= 0 && curY < height && curX < width) {
+                                // Building walls
+                                if (w === 0 || w === bWidth - 1) buffer[curY][curX] = '|';
+                                else if (h === bHeight - 1) buffer[curY][curX] = '_';
+                                else {
+                                    // Windows
+                                    if (h % 2 === 0 && w % 2 === 1) {
+                                        // Flickering lights
+                                        buffer[curY][curX] = (Math.random() > 0.95) ? ' ' : (Math.random() > 0.2 ? 'o' : '#');
+                                    } else {
+                                        buffer[curY][curX] = ' ';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // Add spires to some buildings
+                    if (bHeight > 10) {
+                        buffer[ground - bHeight][x + 1] = '|';
+                        buffer[ground - bHeight - 1][x + 1] = '^';
+                    }
+                }
+            }
+        }
+
+        function drawHill(buffer) {
+            for (let x = 0; x < width; x++) {
+                const ground = getHillHeight(x);
+                for (let y = ground; y < height; y++) {
+                    if (y === ground) {
+                        buffer[y][x] = CHARS.hill[Math.floor(Math.random() * 2)]; // Slope top
+                    } else {
+                        // Soil/Rock texture
+                        const rand = Math.random();
+                        if (rand > 0.98) buffer[y][x] = 'm';
+                        else if (rand > 0.95) buffer[y][x] = ',';
+                        else buffer[y][x] = '.';
+                    }
+                }
+            }
+        }
+
+        function render() {
+            const buffer = createBuffer();
+            
+            // Draw Layers (Back to Front)
+            drawStars(buffer);
+            drawClouds(buffer);
+            drawHill(buffer);
+            drawBuildings(buffer);
+
+            // Convert buffer to string
+            let output = "";
+            for (let y = 0; y < height; y++) {
+                output += buffer[y].join('') + "\n";
+            }
+            container.textContent = output;
+
+            frameCount++;
+            requestAnimationFrame(render);
+        }
+
+        window.addEventListener('resize', () => {
+            init();
+        });
+
+        init();
+        render();
+    </script>
+</body>
+</html>

@@ -1,3 +1,15 @@
+Title: 1.2.2 - 9/28/26
+
+Description: New In-Game Content
+
+Heading: New Features & Additions
+- Added new game assets and crafted defenses.
+- Added new hero equipment and units.
+- Added new upgrade levels.
+- Updated upgrade costs and times to reflect the latest reductions.
+
+===
+
 Title: 1.2.1 - 4/27/26
 
 Description: Added new update content & minor fixes
