@@ -1,3 +1,47 @@
+Title: 1.3.1 - 10/13/26
+
+Description: New Widget Size and bug Fixes
+
+Heading: New Features & Additions
+- Added a new 2x2 Builder widget displaying your two closest builders for the Home Village.
+
+Heading: Changes and Fixes
+- Fixed scrolling issues in the changelog and Progress tab.
+- Fixed Guardians showing a max level of 1 at Town Hall 18.
+- Fixed the same news article being pushed to the user multiple times
+- When tapping notifications is set to open Clash of Clans, previously sent notifications now open the game as expected
+
+===
+
+Title: 1.3 - 10/8/26
+
+Description: New Progress, sharing, and quality-of-life features
+
+Heading: New Features & Additions
+- Added the Progress page to track all Home Village levels, with a customizable interface and support for Supercharges and Crafted Defenses.
+- Added Share Progress mode.
+- Maxed items for your Town Hall are marked with a blue border for quick identification.
+- Added a page to track all equipment levels in one view.
+- Tap a unit to view its max level for your Town Hall and its overall max level.
+- Added official iPhone Duo support.
+- Added support for Hammer Jam cost and time reductions.
+- Added a News tab and an Events section for major in-game events.
+- Upgrades can now be swiped to mark them as canceled or completed.
+
+Heading: Changes & Fixes
+- Fixed the display names for Mother Witch and Angry Spell.
+- Updated the number of upgradeable walls for TH18 to match the game.
+- Navigation now collapses when scrolling
+- Fixed jitter when applying a boost.
+- Modernized the Welcome page layout.
+- Fixed image width in the changelog in landscape orientation.
+- Added an option to reset rearrangeable views to their defaults.
+- Fixed the Legends League asset display.
+- Notifications now show the correct profile name instead of the most recent profile's name.
+- Improved player data paste handling during import.
+
+===
+
 Title: 1.2.2 - 9/28/26
 
 Description: New In-Game Content
