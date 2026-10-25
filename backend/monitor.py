@@ -24,6 +24,7 @@ ALLOWED_ORIGIN = os.environ.get('DUO_ALLOWED_ORIGIN', 'https://zacatac3.github.i
 VAPID_SUBJECT = os.environ.get('DUO_VAPID_SUBJECT', 'https://zacatac3.github.io')
 ZIP = os.environ.get('DUO_ZIP', '43623')
 SKUS = {'Star White 256GB': 'MK1E4LL/A', 'Night Sky 256GB': 'MK1F4LL/A'}
+TEST_SKUS = {'iPhone 18 Pro 256GB Burgundy': 'MJQ54LL/A'}
 LEGACY_COLORS = {'White 256GB': 'Star White 256GB', 'Blue 256GB (verify)': 'Night Sky 256GB'}
 STORES = {'R299': 'Franklin Park', 'R230': 'Briarwood'}
 CHECK_INTERVAL_SECONDS = 60
@@ -36,13 +37,18 @@ CORS(app, resources={r'/api/*': {'origins': [ALLOWED_ORIGIN], 'allow_headers': [
 lock = threading.Lock()
 state = {'running': False, 'completed': 0, 'last_check': None, 'last_error': None,
          'started_at': None, 'last_inventory': None, 'last_notification_at': None,
-         'next_status_at': None, 'last_notification_error': None, 'stopped_at': None}
+         'next_status_at': None, 'last_notification_error': None, 'stopped_at': None,
+         'test_mode': False, 'mode_revision': 0}
 stop_event = threading.Event()
 check_history = deque(maxlen=HISTORY_LIMIT)
 activity = {'in_flight': None}
 
 def utc_now():
     return datetime.now(timezone.utc).isoformat(timespec='milliseconds')
+
+def mode_details(test_mode):
+    return {'test_mode': test_mode, 'mode_label': 'iPhone 18 Pro test' if test_mode else 'Duo',
+            'skus': TEST_SKUS if test_mode else SKUS}
 
 def get_token():
     if not TOKEN_FILE.exists():
@@ -85,6 +91,7 @@ def status():
     result['subscribed'] = SUB_FILE.exists()
     result.update(check_interval_seconds=CHECK_INTERVAL_SECONDS,
                   status_interval_seconds=STATUS_INTERVAL_SECONDS)
+    result.update(mode_details(result['test_mode']))
     return jsonify(result)
 
 @app.get('/api/activity')
@@ -101,9 +108,24 @@ def recent_activity():
                   'capacity': HISTORY_LIMIT, 'success_count': sum(row['ok'] for row in retained),
                   'failure_count': sum(not row['ok'] for row in retained),
                   'in_flight': activity['in_flight'], 'running': state['running'],
-                  'started_at': state['started_at']}
+                  'started_at': state['started_at'], **mode_details(state['test_mode'])}
     result.update(server_time=utc_now(), check_interval_seconds=CHECK_INTERVAL_SECONDS)
     return jsonify(result)
+
+@app.post('/api/mode')
+def set_mode():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or not isinstance(data.get('test_mode'), bool):
+        return jsonify(error='test_mode must be true or false'), 400
+    with lock:
+        changed = state['test_mode'] != data['test_mode']
+        if changed:
+            state['test_mode'] = data['test_mode']
+            state['mode_revision'] += 1
+            state['last_inventory'] = None
+        result = mode_details(state['test_mode'])
+    return jsonify(ok=True, changed=changed, **result,
+                   message='Mode applies on the next stock check, within 60 seconds while monitoring.')
 
 @app.post('/api/start')
 def start():
@@ -129,14 +151,15 @@ def stop():
         stop_event.set()
     return jsonify(ok=True, stopping=True, already_stopping=already_stopping)
 
-def check_inventory():
+def check_inventory(test_mode=False):
+    skus = TEST_SKUS if test_mode else SKUS
     params = [('pl','true'),('mts.0','regular'),('location',ZIP)]
-    params += [(f'parts.{i}', sku) for i, sku in enumerate(SKUS.values())]
+    params += [(f'parts.{i}', sku) for i, sku in enumerate(skus.values())]
     started_at = utc_now()
     started = time.monotonic()
     with lock:
         previous_at = check_history[-1]['started_at'] if check_history else None
-        activity['in_flight'] = {'started_at': started_at}
+        activity['in_flight'] = {'started_at': started_at, 'test_mode': test_mode}
     response = None
     inventory = None
     error = None
@@ -144,7 +167,7 @@ def check_inventory():
         response = requests.get('https://www.apple.com/shop/retail/pickup-message', params=params, timeout=20,
                                 headers={'User-Agent':'Mozilla/5.0','Accept':'application/json'})
         response.raise_for_status()
-        inventory = parse_inventory(response.json())
+        inventory = parse_inventory(response.json(), skus)
         return inventory
     except Exception as exc:
         error = f'{type(exc).__name__}: {exc}'[:500]
@@ -154,6 +177,7 @@ def check_inventory():
                  'duration_ms': round((time.monotonic() - started) * 1000),
                  'http_status': response.status_code if response is not None else None,
                  'ok': inventory is not None, 'inventory': inventory, 'error': error,
+                 'test_mode': test_mode, 'skus': skus,
                  'gap_seconds': round((datetime.fromisoformat(started_at) -
                                        datetime.fromisoformat(previous_at)).total_seconds(), 1)
                                 if previous_at else None}
@@ -161,7 +185,9 @@ def check_inventory():
             check_history.append(entry)
             activity['in_flight'] = None
 
-def parse_inventory(payload):
+def parse_inventory(payload, skus=None):
+    if skus is None:
+        skus = SKUS
     if not isinstance(payload, dict) or not isinstance(payload.get('head'), dict):
         raise ValueError('Invalid Apple inventory response')
     if str(payload['head'].get('status')) != '200':
@@ -179,7 +205,7 @@ def parse_inventory(payload):
         if not isinstance(availability, dict):
             raise ValueError(f'Invalid Apple availability at {name}')
         outcomes = {}
-        for color, sku in SKUS.items():
+        for color, sku in skus.items():
             item=availability.get(sku)
             if not isinstance(item, dict) or not item:
                 raise ValueError(f'Apple response missing SKU {sku} at {name}')
@@ -190,16 +216,16 @@ def parse_inventory(payload):
         inventory[name] = outcomes
     return inventory
 
-def stock_options(inventory):
+def stock_options(inventory, test_mode=False):
     normalized = {store: {LEGACY_COLORS.get(color, color): available
                           for color, available in items.items()}
                   for store, items in (inventory or {}).items()}
     options = [{'store': store, 'color': color,
                 'available': normalized.get(store, {}).get(color)}
-               for store in STORES.values() for color in SKUS]
+               for store in STORES.values() for color in (TEST_SKUS if test_mode else SKUS)]
     return sorted(options, key=lambda option: option['available'] is not True)
 
-def notification_payload(inventory, reason, checked_at):
+def notification_payload(inventory, reason, checked_at, test_mode=False):
     checked = datetime.fromisoformat(checked_at).astimezone(EASTERN)
     timestamp = checked.strftime('%Y-%m-%d %I:%M:%S %p %Z')
     if reason in ('started', 'stopped'):
@@ -209,15 +235,16 @@ def notification_payload(inventory, reason, checked_at):
                  if reason == 'started' else 'Stock checks and scheduled alerts are paused.']
     elif inventory is None:
         title = 'Duo monitor needs attention'
-        lines = [f'{option["store"]} · {option["color"]}: Unknown' for option in stock_options(None)]
+        lines = [f'{option["store"]} · {option["color"]}: Unknown' for option in stock_options(None, test_mode)]
         lines.append('Stock could not be verified. Retrying every minute.')
     else:
-        options = stock_options(inventory)
+        options = stock_options(inventory, test_mode)
         available = [option for option in options if option['available'] is True]
         title = 'Duo is out of stock'
         if available:
             first = available[0]
-            title = f'In stock: {first["color"].removesuffix(" 256GB")} at {first["store"]}'
+            product = 'iPhone 18 Pro' if test_mode else first['color'].removesuffix(' 256GB')
+            title = f'In stock: {product} at {first["store"]}'
             if len(available) > 1:
                 title += f' (+{len(available) - 1} more)'
         lines = []
@@ -231,21 +258,24 @@ def notification_payload(inventory, reason, checked_at):
                 'error': 'Inventory check failed'}
     if reason not in ('started', 'stopped'):
         lines = [f'Checked: {timestamp}'] + lines + [captions[reason]]
+    if test_mode:
+        title = 'TEST · ' + title.replace('Duo', 'iPhone 18 Pro')
+        lines.insert(0, 'TEST MODE · MJQ54LL/A · Not a Duo stock alert')
     return {'title': title, 'body': '\n'.join(lines), 'checked_at': checked_at,
             'sent_at': utc_now(), 'reason': reason,
-            'check_id': secrets.token_hex(8), 'url': './'}
+            'check_id': secrets.token_hex(8), 'url': './', **mode_details(test_mode)}
 
-def send_notification(inventory, reason, checked_at):
+def send_notification(inventory, reason, checked_at, test_mode=False):
     subscription = json.loads(SUB_FILE.read_text())
-    payload = notification_payload(inventory, reason, checked_at)
+    payload = notification_payload(inventory, reason, checked_at, test_mode)
     webpush(subscription_info=subscription, data=json.dumps(payload),
             vapid_private_key=str(KEY_FILE), vapid_claims={'sub': VAPID_SUBJECT}, timeout=20)
     print(f'[{payload["sent_at"]}] Push sent ({reason}): {payload["body"]}', flush=True)
     return payload['sent_at']
 
-def send_lifecycle_notification(reason, event_at):
+def send_lifecycle_notification(reason, event_at, test_mode=False):
     try:
-        sent_at = send_notification(None, reason, event_at)
+        sent_at = send_notification(None, reason, event_at, test_mode)
     except (WebPushException, OSError, ValueError, requests.RequestException) as exc:
         error = f'{type(exc).__name__}: {exc}'
         with lock:
@@ -262,20 +292,41 @@ def run_monitor():
     error_notification_pending = False
     recovery_pending = False
     index = 0
+    last_mode = None
+    last_revision = None
     try:
-        send_lifecycle_notification('started', utc_now())
+        with lock:
+            test_mode = state['test_mode']
+        send_lifecycle_notification('started', utc_now(), test_mode)
         while not stop_event.is_set():
+            with lock:
+                test_mode = state['test_mode']
+                revision = state['mode_revision']
+            if last_mode != test_mode or last_revision != revision:
+                last_notified_inventory = None
+                inventory_failed = False
+                error_notification_pending = False
+                recovery_pending = False
+                last_mode = test_mode
+                last_revision = revision
             index += 1
             next_check = time.monotonic() + CHECK_INTERVAL_SECONDS
             inventory = None
             error = None
             try:
-                inventory = check_inventory()
+                inventory = check_inventory(test_mode)
             except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
                 error = f'{type(exc).__name__}: {exc}'
                 print(f'[{utc_now()}] Check {index} failed: {error}', flush=True)
             checked_at = utc_now()
             if stop_event.is_set(): break
+            with lock:
+                mode_changed = revision != state['mode_revision']
+            if mode_changed:
+                # Keep the old request in history under its original mode, then
+                # check the new mode without sending a stale-mode stock alert.
+                last_mode = None
+                continue
             now = time.monotonic()
             status_due = last_status_sent is None or now - last_status_sent >= STATUS_INTERVAL_SECONDS
             if inventory is None:
@@ -296,7 +347,7 @@ def run_monitor():
                     reason = 'heartbeat' if status_due else None
             if reason:
                 try:
-                    sent_at = send_notification(inventory, reason, checked_at)
+                    sent_at = send_notification(inventory, reason, checked_at, test_mode)
                     if inventory is not None:
                         last_notified_inventory = inventory
                         recovery_pending = False
@@ -317,12 +368,15 @@ def run_monitor():
                         state['last_notification_error'] = push_error
                     print(f'[{utc_now()}] {error}', flush=True)
             with lock:
-                state.update(completed=index, last_check=checked_at, last_error=error,
-                             last_inventory=inventory)
+                if revision == state['mode_revision']:
+                    state.update(completed=index, last_check=checked_at, last_error=error,
+                                 last_inventory=inventory)
             if stop_event.wait(max(0, next_check - time.monotonic())): break
     finally:
         stopped_at = utc_now()
-        send_lifecycle_notification('stopped', stopped_at)
+        with lock:
+            test_mode = state['test_mode']
+        send_lifecycle_notification('stopped', stopped_at, test_mode)
         with lock:
             state.update(running=False, stopped_at=stopped_at, next_status_at=None)
         print('Monitor stopped', flush=True)

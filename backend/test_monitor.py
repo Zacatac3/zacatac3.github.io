@@ -16,6 +16,7 @@ OUT = {name: {color: False for color in monitor.SKUS} for name in monitor.STORES
 IN = copy.deepcopy(OUT)
 IN['Franklin Park']['Star White 256GB'] = True
 STAMP = '2026-10-24T20:34:56.789+00:00'
+TEST_IN = {store: {label: True for label in monitor.TEST_SKUS} for store in monitor.STORES.values()}
 
 
 class FakeClock:
@@ -58,7 +59,7 @@ class MonitorTests(unittest.TestCase):
         sent = []
         attempts = []
 
-        def send(result, reason, checked_at):
+        def send(result, reason, checked_at, test_mode=False):
             if reason not in ('started', 'stopped'):
                 attempts.append((clock.seconds, reason))
             if reason == lifecycle_failure or (reason not in ('started', 'stopped') and
@@ -189,11 +190,11 @@ class MonitorTests(unittest.TestCase):
     def test_stop_notification_follows_in_flight_request_without_a_stock_push(self):
         event = threading.Event()
         events = []
-        def check():
+        def check(test_mode=False):
             events.append('apple_request')
             event.set()
             return OUT
-        def send(inventory, reason, checked_at):
+        def send(inventory, reason, checked_at, test_mode=False):
             events.append(reason)
             return STAMP
         with patch.object(monitor, 'stop_event', event), \
@@ -361,6 +362,91 @@ class MonitorTests(unittest.TestCase):
         self.assertEqual(data['entries'][0], monitor.check_history[-1])
         for limit in ['0', '1441', 'invalid']:
             self.assertEqual(client.get('/api/activity?limit='+limit, headers=headers).status_code, 400)
+
+    def test_mode_api_requires_authentication_and_real_boolean(self):
+        client = monitor.app.test_client()
+        headers = {'Authorization': 'Bearer ' + monitor.ADMIN_TOKEN}
+        self.assertEqual(client.post('/api/mode', json={'test_mode': True}).status_code, 401)
+        for value in ['true', 1, None, []]:
+            self.assertEqual(client.post('/api/mode', json={'test_mode': value}, headers=headers).status_code, 400)
+        with patch.object(monitor.requests, 'get') as apple:
+            result = client.post('/api/mode', json={'test_mode': True}, headers=headers).json
+            self.assertTrue(result['changed'])
+            self.assertTrue(result['test_mode'])
+            self.assertEqual(set(result['skus'].values()), {'MJQ54LL/A'})
+            revision = monitor.state['mode_revision']
+            self.assertFalse(client.post('/api/mode', json={'test_mode': True}, headers=headers).json['changed'])
+            self.assertEqual(monitor.state['mode_revision'], revision)
+            self.assertFalse(client.post('/api/mode', json={'test_mode': False}, headers=headers).json['test_mode'])
+            apple.assert_not_called()
+
+    def test_test_mode_requests_only_test_sku_and_labels_history(self):
+        stores = [{'storeNumber': store_id, 'partsAvailability': {
+            'MJQ54LL/A': {'pickupDisplay': 'available'}}} for store_id in monitor.STORES]
+        response = Mock(status_code=200)
+        response.json.return_value = {'head': {'status': '200'}, 'body': {'stores': stores}}
+        with patch.object(monitor.requests, 'get', return_value=response) as apple:
+            self.assertEqual(monitor.check_inventory(True), TEST_IN)
+        params = apple.call_args.kwargs['params']
+        self.assertEqual([(key, value) for key, value in params if key.startswith('parts.')],
+                         [('parts.0', 'MJQ54LL/A')])
+        self.assertTrue(monitor.check_history[-1]['test_mode'])
+        self.assertEqual(monitor.check_history[-1]['skus'], monitor.TEST_SKUS)
+
+    def test_test_push_clearly_identifies_product_and_both_stores(self):
+        payload = monitor.notification_payload(TEST_IN, 'initial_status', STAMP, True)
+        self.assertTrue(payload['title'].startswith('TEST · In stock: iPhone 18 Pro'))
+        self.assertIn('MJQ54LL/A', payload['body'])
+        for store in monitor.STORES.values():
+            self.assertIn(store+' · iPhone 18 Pro 256GB Burgundy: IN STOCK', payload['body'])
+        self.assertNotIn('Star White', payload['body'])
+        self.assertNotIn('Night Sky', payload['body'])
+        self.assertTrue(payload['test_mode'])
+        failed = monitor.notification_payload(None, 'error', STAMP, True)
+        self.assertEqual(failed['body'].count(': Unknown'), 2)
+
+    def test_switching_modes_sends_fresh_status_and_restores_duo(self):
+        class SwitchingClock(FakeClock):
+            def wait(self, seconds):
+                done = super().wait(seconds)
+                if len(self.waits) < 3:
+                    monitor.state['test_mode'] = len(self.waits) == 1
+                    monitor.state['mode_revision'] += 1
+                return done
+        clock = SwitchingClock(3)
+        sent = []
+        def send(inventory, reason, checked_at, test_mode=False):
+            sent.append((reason, test_mode))
+            return clock.utc_now()
+        with patch.object(monitor, 'stop_event', clock), \
+             patch.object(monitor.time, 'monotonic', lambda: clock.seconds), \
+             patch.object(monitor, 'utc_now', clock.utc_now), \
+             patch.object(monitor, 'send_notification', send), \
+             patch.object(monitor, 'check_inventory', side_effect=lambda mode: TEST_IN if mode else OUT), \
+             redirect_stdout(io.StringIO()):
+            monitor.run_monitor()
+        self.assertEqual(sent, [('started', False), ('initial_status', False),
+                                ('initial_status', True), ('initial_status', False), ('stopped', False)])
+
+    def test_mode_switch_during_request_does_not_send_old_mode_stock_alert(self):
+        clock = FakeClock(1)
+        sent = []
+        def check(test_mode=False):
+            if not test_mode:
+                monitor.state['test_mode'] = True
+                monitor.state['mode_revision'] += 1
+                return OUT
+            return TEST_IN
+        def send(inventory, reason, checked_at, test_mode=False):
+            sent.append((reason, test_mode))
+            return clock.utc_now()
+        with patch.object(monitor, 'stop_event', clock), \
+             patch.object(monitor.time, 'monotonic', lambda: clock.seconds), \
+             patch.object(monitor, 'utc_now', clock.utc_now), \
+             patch.object(monitor, 'send_notification', send), \
+             patch.object(monitor, 'check_inventory', side_effect=check), redirect_stdout(io.StringIO()):
+            monitor.run_monitor()
+        self.assertEqual(sent, [('started', False), ('initial_status', True), ('stopped', True)])
 
 
 if __name__ == '__main__':

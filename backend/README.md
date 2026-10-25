@@ -41,6 +41,16 @@ Apple's pickup response identifies the monitored SKUs as Star White 256GB
 also recognizes legacy color names in retained history. Store and SKU
 configuration is in `monitor.py`.
 
+The **Test with iPhone 18 Pro** switch replaces the Duo request with SKU
+`MJQ54LL/A` (iPhone 18 Pro 256GB Burgundy), at the same two stores. While
+monitoring is running, the next scheduled check (within 60 seconds) sends a
+fresh status push for the selected mode even if stock has not changed. Test
+notifications say `TEST`, and each history entry keeps its own mode label.
+Turning the switch off restores both Duo colors. This switch affects the Mac
+backend globally, rather than just the open browser. The backend defaults to
+Duo mode after a restart. Switching modes while stopped does not start checks;
+tap **Start monitoring** when ready.
+
 Run from the repository root using the existing environment:
 
 ```sh
