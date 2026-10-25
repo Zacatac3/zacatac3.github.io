@@ -63,7 +63,7 @@ class MonitorTests(unittest.TestCase):
         self.cooldown_directory.cleanup()
 
     def run_checks(self, checks, inventory=OUT, send_failure=None, include_lifecycle=False,
-                   lifecycle_failure=None):
+                   lifecycle_failure=None, interval=60):
         clock = FakeClock(checks)
         sent = []
         attempts = []
@@ -80,6 +80,7 @@ class MonitorTests(unittest.TestCase):
         check = Mock(side_effect=inventory) if isinstance(inventory, list) else Mock(return_value=inventory)
         monitor.state['running'] = True
         with patch.object(monitor, 'stop_event', clock), \
+             patch.object(monitor, 'CHECK_INTERVAL_SECONDS', interval), \
              patch.object(monitor.time, 'monotonic', lambda: clock.seconds), \
              patch.object(monitor, 'utc_now', clock.utc_now), \
              patch.object(monitor, 'check_inventory', check), \
@@ -87,7 +88,7 @@ class MonitorTests(unittest.TestCase):
             monitor.run_monitor()
         self.assertFalse(monitor.state['running'])
         self.assertEqual(check.call_count, checks)
-        self.assertTrue(all(wait == 60 for wait in clock.waits))
+        self.assertTrue(all(wait == interval for wait in clock.waits))
         return (sent if include_lifecycle else [row for row in sent if row[1] not in ('started', 'stopped')]), attempts
 
     def test_unchanged_stock_has_initial_and_four_hour_statuses(self):
@@ -293,7 +294,7 @@ class MonitorTests(unittest.TestCase):
             self.assertEqual(response.json['status_interval_seconds'], 14400)
             thread.return_value.start.assert_called_once()
             self.assertEqual(client.post('/api/start', headers=headers).status_code, 409)
-        self.assertEqual(client.get('/api/status', headers=headers).json['check_interval_seconds'], 60)
+        self.assertEqual(client.get('/api/status', headers=headers).json['check_interval_seconds'], 30)
 
     def test_invalid_inventory_responses_are_reported_as_check_failures(self):
         response = Mock()
@@ -593,10 +594,10 @@ class MonitorTests(unittest.TestCase):
              patch.object(monitor, 'check_inventory', side_effect=check), \
              patch.object(monitor, 'send_notification', send), redirect_stdout(io.StringIO()):
             monitor.run_monitor()
-        self.assertEqual(times, [0, 900, 2700, 2760])
-        self.assertEqual(clock.waits, [900, 1800, 60, 60])
+        self.assertEqual(times, [0, 900, 2700, 2730])
+        self.assertEqual(clock.waits, [900, 1800, 30, 30])
         self.assertEqual([row for row in sent if row[1] not in ('started', 'stopped')],
-                         [(0, 'cooldown'), (900, 'cooldown'), (2700, 'recovered'), (2760, 'in_stock')])
+                         [(0, 'cooldown'), (900, 'cooldown'), (2700, 'recovered'), (2730, 'in_stock')])
         self.assertEqual(monitor.state['cooldown_attempts'], 0)
 
     def test_stop_interrupts_cooldown_without_querying_apple_or_clearing_guard(self):
@@ -627,7 +628,7 @@ class MonitorTests(unittest.TestCase):
              patch.object(monitor, 'send_notification', side_effect=lambda *args: clock.utc_now()), \
              redirect_stdout(io.StringIO()):
             monitor.run_monitor()
-        self.assertEqual(clock.waits, [900, 1800, 60, 60])
+        self.assertEqual(clock.waits, [900, 1800, 30, 30])
         self.assertEqual(check.call_count, 4)
         self.assertEqual(monitor.state['cooldown_attempts'], 0)
 
@@ -658,6 +659,15 @@ class MonitorTests(unittest.TestCase):
                 monitor.run_monitor()
             check.assert_called_once()
             self.assertEqual(clock.waits, [900])
+
+    def test_production_30_second_cadence_keeps_four_hour_status_schedule(self):
+        self.assertEqual(monitor.CHECK_INTERVAL_SECONDS, 30)
+        sent, _ = self.run_checks(481, interval=30)
+        self.assertEqual([(t, reason) for t, reason, _ in sent],
+                         [(0, 'initial_status'), (14400, 'heartbeat')])
+        sent, _ = self.run_checks(4, IN, interval=30)
+        self.assertEqual([(t, reason) for t, reason, _ in sent],
+                         [(0, 'initial_status'), (30, 'in_stock'), (60, 'in_stock'), (90, 'in_stock')])
 
 
 if __name__ == '__main__':
