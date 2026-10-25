@@ -13,11 +13,17 @@ service; monitoring must be started again after restarting the backend or Mac.
   Stopping waits for any active request to finish; repeated stop requests do
   not send duplicate stop pushes. Push delivery failures appear in backend
   status as `last_notification_error` and do not prevent starting or stopping.
-- Sends an initial stock status on start, then alerts when any monitored store or
-  variant changes availability.
-- Every stock notification and activity entry lists both colors at both stores.
-  Available combinations appear first and an in-stock push title identifies
-  the first available color and store. Check failures show unknown availability.
+- Sends an initial stock status on start, then a distinct push on every successful
+  check while any monitored variant is in stock, even if availability is unchanged.
+  Also sends stock-change alerts, including when the last available option sells
+  out. This applies in both Duo and test mode. Repeated in-stock pushes do not
+  postpone the four-hour status schedule. The one-minute samples and request log
+  show the observed availability window, rather than its exact start/end seconds.
+- Stock notifications show one compact line per store, followed by the Eastern
+  timestamp: `Franklin Park: White IN, Blue OOS`. Storage is omitted, `IN` means
+  in stock, `OOS` means out of stock, and `?` means the check failed. Test mode
+  uses Burgundy and a `TEST 18 Pro` title. The website log retains full labels.
+  An in-stock push title identifies the first available color and store.
 - Sends a fresh status every four hours whether stock is available or not.
   Stock-change alerts do not postpone the four-hour status check.
 - Reports failed checks without claiming stock is unavailable, retries every

@@ -88,17 +88,18 @@ class MonitorTests(unittest.TestCase):
         self.assertEqual(monitor.state['completed'], 481)
         self.assertIsNone(monitor.state['next_status_at'])
 
-    def test_in_stock_also_gets_four_hour_status(self):
+    def test_unchanged_in_stock_pushes_every_check_including_four_hours(self):
         sent, _ = self.run_checks(241, IN)
-        self.assertEqual([(t, r) for t, r, _ in sent], [(0, 'initial_status'), (14400, 'heartbeat')])
+        self.assertEqual([(t, r) for t, r, _ in sent],
+                         [(0, 'initial_status')] + [(index*60, 'in_stock') for index in range(1, 241)])
         self.assertEqual(sent[-1][2], IN)
 
     def test_stock_changes_do_not_postpone_periodic_status(self):
-        results = [OUT, IN] + [IN] * 238 + [IN, OUT]
+        results = [IN]*3 + [OUT]*238
         sent, _ = self.run_checks(len(results), results)
         self.assertEqual([(t, r) for t, r, _ in sent],
-                         [(0, 'initial_status'), (60, 'stock_change'),
-                          (14400, 'heartbeat'), (14460, 'stock_change')])
+                         [(0, 'initial_status'), (60, 'in_stock'), (120, 'in_stock'),
+                          (180, 'stock_change'), (14400, 'heartbeat')])
 
     def test_store_and_variant_changes_are_detected(self):
         other_store = copy.deepcopy(IN)
@@ -145,14 +146,14 @@ class MonitorTests(unittest.TestCase):
                                 ('2026-11-01T06:00:00+00:00', '2026-11-01 01:00:00 AM EST')]:
             payload = monitor.notification_payload(OUT, 'heartbeat', stamp)
             self.assertIn(expected, payload['body'])
-            self.assertEqual(payload['title'], 'Duo is out of stock')
-            self.assertIn('4-hour status check', payload['body'])
+            self.assertEqual(payload['title'], 'Duo · 4h status · OOS')
+            self.assertEqual(len(payload['body'].splitlines()), 3)
 
     def test_lifecycle_notifications_have_explicit_titles_and_event_times(self):
         for reason in ('started', 'stopped'):
             payload = monitor.notification_payload(None, reason, STAMP)
             self.assertEqual(payload['title'], 'Duo monitoring '+reason)
-            self.assertIn(reason.capitalize()+': 2026-10-24 04:34:56 PM EDT', payload['body'])
+            self.assertEqual(payload['body'], '2026-10-24 04:34:56 PM EDT')
             self.assertNotIn('Stock could not be verified', payload['body'])
 
     def test_start_and_stop_notifications_surround_the_inventory_checks(self):
@@ -207,11 +208,10 @@ class MonitorTests(unittest.TestCase):
 
     def test_notification_shows_available_store_and_variant(self):
         payload = monitor.notification_payload(IN, 'stock_change', STAMP)
-        self.assertEqual(payload['title'], 'In stock: Star White at Franklin Park')
-        self.assertIn('Franklin Park · Star White 256GB: IN STOCK', payload['body'])
-        self.assertIn('Franklin Park · Night Sky 256GB: Out of stock', payload['body'])
-        self.assertIn('Briarwood · Star White 256GB: Out of stock', payload['body'])
-        self.assertIn('Briarwood · Night Sky 256GB: Out of stock', payload['body'])
+        self.assertEqual(payload['title'], 'In stock: White · Franklin Park')
+        self.assertEqual(payload['body'].splitlines()[:2],
+                         ['Franklin Park: White IN, Blue OOS', 'Briarwood: White OOS, Blue OOS'])
+        self.assertNotIn('256', payload['body'])
 
     def test_all_four_combinations_are_explicit_for_every_stock_pattern(self):
         pairs = [(store, color) for store in monitor.STORES.values() for color in monitor.SKUS]
@@ -220,21 +220,25 @@ class MonitorTests(unittest.TestCase):
             for index, (store, color) in enumerate(pairs):
                 inventory[store][color] = bool(pattern & (1 << index))
             payload = monitor.notification_payload(inventory, 'heartbeat', STAMP)
-            for store, color in pairs:
-                status = 'IN STOCK' if inventory[store][color] else 'Out of stock'
-                self.assertIn(f'{store} · {color}: {status}', payload['body'])
+            self.assertEqual(len(payload['body'].splitlines()), 3)
+            for store in monitor.STORES.values():
+                statuses = [monitor.SHORT_COLORS[color]+' '+('IN' if available else 'OOS')
+                            for color, available in inventory[store].items()]
+                self.assertIn(store+': '+', '.join(statuses), payload['body'].splitlines()[:2])
+            self.assertNotIn('256', payload['body'])
+            self.assertTrue(all(len(line) <= 34 for line in payload['body'].splitlines()[:2]))
             options = monitor.stock_options(inventory)
             if pattern:
                 self.assertTrue(options[0]['available'])
                 self.assertIn(options[0]['store'], payload['title'])
-                self.assertIn(options[0]['color'].removesuffix(' 256GB'), payload['title'])
+                self.assertIn(monitor.SHORT_COLORS[options[0]['color']], payload['title'])
 
     def test_briarwood_blue_stock_is_immediately_identifiable(self):
         inventory = copy.deepcopy(OUT)
         inventory['Briarwood']['Night Sky 256GB'] = True
         payload = monitor.notification_payload(inventory, 'stock_change', STAMP)
-        self.assertEqual(payload['title'], 'In stock: Night Sky at Briarwood')
-        self.assertEqual(payload['body'].splitlines()[1], 'Briarwood · Night Sky 256GB: IN STOCK')
+        self.assertEqual(payload['title'], 'In stock: Blue · Briarwood')
+        self.assertEqual(payload['body'].splitlines()[0], 'Briarwood: White OOS, Blue IN')
 
     def test_legacy_color_names_are_supported_without_losing_stock_status(self):
         inventory = {store: {'White 256GB': False, 'Blue 256GB (verify)': store == 'Briarwood'}
@@ -245,9 +249,9 @@ class MonitorTests(unittest.TestCase):
 
     def test_error_notification_does_not_claim_out_of_stock(self):
         payload = monitor.notification_payload(None, 'error', STAMP)
-        self.assertIn('could not be verified', payload['body'])
-        self.assertNotIn('out of stock', payload['body'].lower())
-        self.assertEqual(payload['body'].count(': Unknown'), 4)
+        self.assertIn('Check failed', payload['title'])
+        self.assertNotIn('OOS', payload['body'])
+        self.assertEqual(payload['body'].count('?'), 4)
 
     def test_inventory_parsing_and_incomplete_response(self):
         stores = [{'storeNumber': store_id, 'partsAvailability': {
@@ -395,15 +399,38 @@ class MonitorTests(unittest.TestCase):
 
     def test_test_push_clearly_identifies_product_and_both_stores(self):
         payload = monitor.notification_payload(TEST_IN, 'initial_status', STAMP, True)
-        self.assertTrue(payload['title'].startswith('TEST · In stock: iPhone 18 Pro'))
-        self.assertIn('MJQ54LL/A', payload['body'])
+        self.assertTrue(payload['title'].startswith('TEST 18 Pro · In stock: Burgundy'))
+        self.assertIn('MJQ54LL/A', payload['skus'].values())
         for store in monitor.STORES.values():
-            self.assertIn(store+' · iPhone 18 Pro 256GB Burgundy: IN STOCK', payload['body'])
+            self.assertIn(store+': Burgundy IN', payload['body'])
         self.assertNotIn('Star White', payload['body'])
         self.assertNotIn('Night Sky', payload['body'])
         self.assertTrue(payload['test_mode'])
         failed = monitor.notification_payload(None, 'error', STAMP, True)
-        self.assertEqual(failed['body'].count(': Unknown'), 2)
+        self.assertEqual(failed['body'].count('?'), 2)
+        self.assertEqual(len(payload['body'].splitlines()), 3)
+        self.assertNotIn('256', payload['body'])
+
+    def test_stock_window_sends_each_positive_check_and_one_sold_out_update(self):
+        sent, _ = self.run_checks(6, [OUT, IN, IN, IN, OUT, OUT])
+        self.assertEqual([(t, reason) for t, reason, _ in sent],
+                         [(0, 'initial_status'), (60, 'stock_change'), (120, 'in_stock'),
+                          (180, 'in_stock'), (240, 'stock_change')])
+
+    def test_failed_checks_do_not_repeat_stale_in_stock_results(self):
+        sent, _ = self.run_checks(5, [IN, requests.Timeout('offline'), requests.Timeout('offline'), IN, OUT])
+        self.assertEqual([(t, reason) for t, reason, _ in sent],
+                         [(0, 'initial_status'), (60, 'error'), (180, 'recovered'), (240, 'stock_change')])
+
+    def test_each_in_stock_payload_has_a_distinct_notification_id(self):
+        payloads = [monitor.notification_payload(IN, 'in_stock', STAMP) for _ in range(3)]
+        self.assertEqual(len({payload['check_id'] for payload in payloads}), 3)
+
+    def test_test_mode_repeats_in_stock_notifications_every_minute(self):
+        monitor.state['test_mode'] = True
+        sent, _ = self.run_checks(3, TEST_IN)
+        self.assertEqual([(t, reason) for t, reason, _ in sent],
+                         [(0, 'initial_status'), (60, 'in_stock'), (120, 'in_stock')])
 
     def test_switching_modes_sends_fresh_status_and_restores_duo(self):
         class SwitchingClock(FakeClock):

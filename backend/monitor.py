@@ -225,42 +225,43 @@ def stock_options(inventory, test_mode=False):
                for store in STORES.values() for color in (TEST_SKUS if test_mode else SKUS)]
     return sorted(options, key=lambda option: option['available'] is not True)
 
+SHORT_COLORS = {'Star White 256GB': 'White', 'Night Sky 256GB': 'Blue',
+                'iPhone 18 Pro 256GB Burgundy': 'Burgundy'}
+
+def compact_stock_lines(inventory, test_mode=False):
+    options = stock_options(inventory, test_mode)
+    stores = sorted(STORES.values(), key=lambda store: not any(
+        option['store'] == store and option['available'] is True for option in options))
+    lines = []
+    for store in stores:
+        by_color = {option['color']: option['available'] for option in options if option['store'] == store}
+        statuses = []
+        for color in (TEST_SKUS if test_mode else SKUS):
+            available = by_color[color]
+            status = 'IN' if available is True else 'OOS' if available is False else '?'
+            statuses.append(f'{SHORT_COLORS[color]} {status}')
+        lines.append(f'{store}: ' + ', '.join(statuses))
+    return lines
+
 def notification_payload(inventory, reason, checked_at, test_mode=False):
     checked = datetime.fromisoformat(checked_at).astimezone(EASTERN)
     timestamp = checked.strftime('%Y-%m-%d %I:%M:%S %p %Z')
     if reason in ('started', 'stopped'):
         title = f'Duo monitoring {reason}'
-        lines = [f'{reason.capitalize()}: {timestamp}',
-                 'Checking stock every minute. Stock alerts and 4-hour status checks are active.'
-                 if reason == 'started' else 'Stock checks and scheduled alerts are paused.']
+        lines = [timestamp]
     elif inventory is None:
-        title = 'Duo monitor needs attention'
-        lines = [f'{option["store"]} · {option["color"]}: Unknown' for option in stock_options(None, test_mode)]
-        lines.append('Stock could not be verified. Retrying every minute.')
+        title = 'Duo · Check failed'
+        lines = compact_stock_lines(None, test_mode) + [timestamp]
     else:
         options = stock_options(inventory, test_mode)
         available = [option for option in options if option['available'] is True]
-        title = 'Duo is out of stock'
+        title = 'Duo · 4h status · OOS' if reason == 'heartbeat' else 'Duo · Out of stock'
         if available:
             first = available[0]
-            product = 'iPhone 18 Pro' if test_mode else first['color'].removesuffix(' 256GB')
-            title = f'In stock: {product} at {first["store"]}'
-            if len(available) > 1:
-                title += f' (+{len(available) - 1} more)'
-        lines = []
-        for option in options:
-            status = 'IN STOCK' if option['available'] is True else 'Out of stock' if option['available'] is False else 'Unknown'
-            lines.append(f'{option["store"]} · {option["color"]}: {status}')
-    captions = {'initial_status': 'Initial stock check · Monitoring is active',
-                'stock_change': 'Stock availability changed',
-                'heartbeat': '4-hour status check · Monitoring is active',
-                'recovered': 'Inventory checks are working again',
-                'error': 'Inventory check failed'}
-    if reason not in ('started', 'stopped'):
-        lines = [f'Checked: {timestamp}'] + lines + [captions[reason]]
+            title = f'In stock: {SHORT_COLORS[first["color"]]} · {first["store"]}'
+        lines = compact_stock_lines(inventory, test_mode) + [timestamp]
     if test_mode:
-        title = 'TEST · ' + title.replace('Duo', 'iPhone 18 Pro')
-        lines.insert(0, 'TEST MODE · MJQ54LL/A · Not a Duo stock alert')
+        title = 'TEST 18 Pro · ' + title.removeprefix('Duo · ').removeprefix('Duo ')
     return {'title': title, 'body': '\n'.join(lines), 'checked_at': checked_at,
             'sent_at': utc_now(), 'reason': reason,
             'check_id': secrets.token_hex(8), 'url': './', **mode_details(test_mode)}
@@ -343,6 +344,8 @@ def run_monitor():
                     reason = 'initial_status'
                 elif inventory != last_notified_inventory:
                     reason = 'stock_change'
+                elif any(available for items in inventory.values() for available in items.values()):
+                    reason = 'in_stock'
                 else:
                     reason = 'heartbeat' if status_due else None
             if reason:

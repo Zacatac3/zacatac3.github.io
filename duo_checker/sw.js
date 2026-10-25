@@ -20,7 +20,7 @@ self.addEventListener('push', event => {
   }
   event.waitUntil(self.registration.showNotification(data.title || 'Duo Monitor', {
     body, data: {url: data.url || './', sent_at: data.sent_at, received_at: receivedAt},
-    // Keep stock alerts and four-hour status checks separately in Notification Center.
+    // Keep every minute's in-stock alert separately, including unchanged results.
     tag: `duo-${data.check_id || Date.now()}`
   }));
 });
