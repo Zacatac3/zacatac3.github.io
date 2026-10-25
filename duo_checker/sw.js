@@ -6,12 +6,16 @@ self.addEventListener('push', event => {
   try { data = event.data ? event.data.json() : {}; } catch { data = {body: event.data?.text()}; }
   const receivedAt = new Date().toISOString();
   let body = data.body || 'Inventory checked';
-  // New payloads already include the inventory check time, formatted in EST.
+  // New payloads already include an Eastern timestamp with the correct DST offset.
   if (!data.checked_at) {
     const sentAt = new Date(data.sent_at || receivedAt);
     if (!Number.isNaN(sentAt.getTime())) {
-      const est = new Date(sentAt.getTime() - 5 * 60 * 60 * 1000);
-      body += `\nChecked: ${est.toISOString().slice(0, 19).replace('T', ' ')} EST`;
+      const eastern = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York', timeZoneName: 'short',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true
+      });
+      body += `\nChecked: ${eastern.format(sentAt)}`;
     }
   }
   event.waitUntil(self.registration.showNotification(data.title || 'Duo Monitor', {

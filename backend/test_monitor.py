@@ -1,6 +1,7 @@
 """Exercise scheduling without waiting four hours or sending real pushes."""
 import copy
 import io
+import threading
 import unittest
 from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
@@ -51,14 +52,17 @@ class MonitorTests(unittest.TestCase):
         monitor.check_history.extend(self.original_history)
         monitor.activity.update(self.original_activity)
 
-    def run_checks(self, checks, inventory=OUT, send_failure=None):
+    def run_checks(self, checks, inventory=OUT, send_failure=None, include_lifecycle=False,
+                   lifecycle_failure=None):
         clock = FakeClock(checks)
         sent = []
         attempts = []
 
         def send(result, reason, checked_at):
-            attempts.append((clock.seconds, reason))
-            if send_failure and len(attempts) == send_failure:
+            if reason not in ('started', 'stopped'):
+                attempts.append((clock.seconds, reason))
+            if reason == lifecycle_failure or (reason not in ('started', 'stopped') and
+                                                send_failure and len(attempts) == send_failure):
                 raise OSError('Simulated push outage')
             sent.append((clock.seconds, reason, result))
             return clock.utc_now()
@@ -74,38 +78,38 @@ class MonitorTests(unittest.TestCase):
         self.assertFalse(monitor.state['running'])
         self.assertEqual(check.call_count, checks)
         self.assertTrue(all(wait == 60 for wait in clock.waits))
-        return sent, attempts
+        return (sent if include_lifecycle else [row for row in sent if row[1] not in ('started', 'stopped')]), attempts
 
     def test_unchanged_stock_has_initial_and_four_hour_statuses(self):
         sent, _ = self.run_checks(481)
         self.assertEqual([(t, r) for t, r, _ in sent],
-                         [(0, 'started'), (14400, 'heartbeat'), (28800, 'heartbeat')])
+                         [(0, 'initial_status'), (14400, 'heartbeat'), (28800, 'heartbeat')])
         self.assertEqual(monitor.state['completed'], 481)
-        self.assertEqual(monitor.state['next_status_at'], '2026-10-24T12:00:00.000+00:00')
+        self.assertIsNone(monitor.state['next_status_at'])
 
     def test_in_stock_also_gets_four_hour_status(self):
         sent, _ = self.run_checks(241, IN)
-        self.assertEqual([(t, r) for t, r, _ in sent], [(0, 'started'), (14400, 'heartbeat')])
+        self.assertEqual([(t, r) for t, r, _ in sent], [(0, 'initial_status'), (14400, 'heartbeat')])
         self.assertEqual(sent[-1][2], IN)
 
     def test_stock_changes_do_not_postpone_periodic_status(self):
         results = [OUT, IN] + [IN] * 238 + [IN, OUT]
         sent, _ = self.run_checks(len(results), results)
         self.assertEqual([(t, r) for t, r, _ in sent],
-                         [(0, 'started'), (60, 'stock_change'),
+                         [(0, 'initial_status'), (60, 'stock_change'),
                           (14400, 'heartbeat'), (14460, 'stock_change')])
 
     def test_store_and_variant_changes_are_detected(self):
         other_store = copy.deepcopy(IN)
         other_store['Briarwood']['Blue 256GB (verify)'] = True
         sent, _ = self.run_checks(3, [OUT, IN, other_store])
-        self.assertEqual([reason for _, reason, _ in sent], ['started', 'stock_change', 'stock_change'])
+        self.assertEqual([reason for _, reason, _ in sent], ['initial_status', 'stock_change', 'stock_change'])
 
     def test_check_errors_notify_once_then_report_recovery(self):
         sent, _ = self.run_checks(5, [OUT, ValueError('bad response'),
                                     ValueError('bad response'), OUT, OUT])
         self.assertEqual([(t, r) for t, r, _ in sent],
-                         [(0, 'started'), (60, 'error'), (180, 'recovered')])
+                         [(0, 'initial_status'), (60, 'error'), (180, 'recovered')])
         self.assertIsNone(sent[1][2])
         self.assertIsNone(monitor.state['last_error'])
 
@@ -117,26 +121,88 @@ class MonitorTests(unittest.TestCase):
 
     def test_failed_initial_push_is_retried(self):
         sent, attempts = self.run_checks(3, send_failure=1)
-        self.assertEqual(attempts, [(0, 'started'), (60, 'started')])
-        self.assertEqual([(t, r) for t, r, _ in sent], [(60, 'started')])
+        self.assertEqual(attempts, [(0, 'initial_status'), (60, 'initial_status')])
+        self.assertEqual([(t, r) for t, r, _ in sent], [(60, 'initial_status')])
 
     def test_failed_periodic_push_is_retried(self):
         sent, attempts = self.run_checks(242, send_failure=2)
-        self.assertEqual(attempts, [(0, 'started'), (14400, 'heartbeat'), (14460, 'heartbeat')])
+        self.assertEqual(attempts, [(0, 'initial_status'), (14400, 'heartbeat'), (14460, 'heartbeat')])
         self.assertEqual(sent[-1][0], 14460)
 
     def test_failed_error_push_is_retried(self):
         sent, attempts = self.run_checks(4, [OUT] + [ValueError('offline')] * 3, send_failure=2)
-        self.assertEqual(attempts, [(0, 'started'), (60, 'error'), (120, 'error')])
+        self.assertEqual(attempts, [(0, 'initial_status'), (60, 'error'), (120, 'error')])
         self.assertEqual(sent[-1][1], 'error')
 
-    def test_notification_time_is_est_to_the_second_including_summer(self):
-        for stamp, expected in [(STAMP, '2026-10-24 03:34:56 PM EST'),
-                                ('2026-07-01T02:03:04.999+00:00', '2026-06-30 09:03:04 PM EST')]:
+    def test_notification_time_tracks_eastern_daylight_saving_to_the_second(self):
+        for stamp, expected in [(STAMP, '2026-10-24 04:34:56 PM EDT'),
+                                ('2026-07-01T02:03:04.999+00:00', '2026-06-30 10:03:04 PM EDT'),
+                                ('2026-01-01T02:03:04.999+00:00', '2025-12-31 09:03:04 PM EST'),
+                                ('2026-03-08T06:59:59+00:00', '2026-03-08 01:59:59 AM EST'),
+                                ('2026-03-08T07:00:00+00:00', '2026-03-08 03:00:00 AM EDT'),
+                                ('2026-11-01T05:59:59+00:00', '2026-11-01 01:59:59 AM EDT'),
+                                ('2026-11-01T06:00:00+00:00', '2026-11-01 01:00:00 AM EST')]:
             payload = monitor.notification_payload(OUT, 'heartbeat', stamp)
             self.assertIn(expected, payload['body'])
             self.assertEqual(payload['title'], 'Duo is out of stock')
             self.assertIn('4-hour status check', payload['body'])
+
+    def test_lifecycle_notifications_have_explicit_titles_and_event_times(self):
+        for reason in ('started', 'stopped'):
+            payload = monitor.notification_payload(None, reason, STAMP)
+            self.assertEqual(payload['title'], 'Duo monitoring '+reason)
+            self.assertIn(reason.capitalize()+': 2026-10-24 04:34:56 PM EDT', payload['body'])
+            self.assertNotIn('Stock could not be verified', payload['body'])
+
+    def test_start_and_stop_notifications_surround_the_inventory_checks(self):
+        sent, _ = self.run_checks(2, include_lifecycle=True)
+        self.assertEqual([reason for _, reason, _ in sent], ['started', 'initial_status', 'stopped'])
+        self.assertIsNotNone(monitor.state['stopped_at'])
+
+    def test_start_notification_is_sent_even_if_apple_check_fails(self):
+        sent, _ = self.run_checks(1, [requests.Timeout('offline')], include_lifecycle=True)
+        self.assertEqual([reason for _, reason, _ in sent], ['started', 'error', 'stopped'])
+
+    def test_start_push_failure_does_not_prevent_monitoring(self):
+        sent, _ = self.run_checks(2, include_lifecycle=True, lifecycle_failure='started')
+        self.assertEqual([reason for _, reason, _ in sent], ['initial_status', 'stopped'])
+
+    def test_stop_push_failure_still_stops_monitoring_and_exposes_error(self):
+        self.run_checks(2, lifecycle_failure='stopped')
+        self.assertFalse(monitor.state['running'])
+        self.assertIn('Simulated push outage', monitor.state['last_notification_error'])
+
+    def test_repeated_stop_requests_do_not_send_extra_pushes(self):
+        event = threading.Event()
+        monitor.state['running'] = True
+        with patch.object(monitor, 'stop_event', event), patch.object(monitor, 'send_notification') as send:
+            client = monitor.app.test_client()
+            headers = {'Authorization': 'Bearer ' + monitor.ADMIN_TOKEN}
+            for index in range(3):
+                response = client.post('/api/stop', headers=headers)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.json['already_stopping'], index > 0)
+            monitor.state['running'] = False
+            self.assertTrue(client.post('/api/stop', headers=headers).json['already_stopped'])
+            send.assert_not_called()
+
+    def test_stop_notification_follows_in_flight_request_without_a_stock_push(self):
+        event = threading.Event()
+        events = []
+        def check():
+            events.append('apple_request')
+            event.set()
+            return OUT
+        def send(inventory, reason, checked_at):
+            events.append(reason)
+            return STAMP
+        with patch.object(monitor, 'stop_event', event), \
+             patch.object(monitor, 'check_inventory', side_effect=check), \
+             patch.object(monitor, 'send_notification', side_effect=send), redirect_stdout(io.StringIO()):
+            monitor.state['running'] = True
+            monitor.run_monitor()
+        self.assertEqual(events, ['started', 'apple_request', 'stopped'])
+        self.assertFalse(monitor.state['running'])
 
     def test_notification_shows_available_store_and_variant(self):
         payload = monitor.notification_payload(IN, 'stock_change', STAMP)

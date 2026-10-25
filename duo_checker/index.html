@@ -2,7 +2,7 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#111827"><link rel="manifest" href="./manifest.json"><title>Duo Stock Monitor</title>
 <style>body{font:16px system-ui;background:#111827;color:#f9fafb;max-width:620px;margin:35px auto;padding:0 18px}input,button,select{font:inherit;padding:12px;margin:5px 0;width:100%;box-sizing:border-box;border-radius:8px}button{background:#60a5fa;color:#111827;border:0;font-weight:700;cursor:pointer}input,select{background:#1f2937;color:white;border:1px solid #64748b}pre{white-space:pre-wrap;overflow-wrap:anywhere}small,.muted{color:#cbd5e1}h2{font-size:1.3rem;margin:0}section{margin:26px 0;padding-top:22px;border-top:1px solid #374151}.activity-header{display:flex;align-items:center;justify-content:space-between;gap:12px}.badge{font-size:.8rem;font-weight:700;white-space:nowrap;border-radius:20px;padding:5px 10px;background:#374151;color:#e5e7eb}.good{background:#064e3b;color:#a7f3d0}.bad{background:#7f1d1d;color:#fecaca}.warning{background:#78350f;color:#fde68a}.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}.stat{padding:14px;background:#1f2937;border-radius:10px}.stat small{display:block;margin-bottom:6px}.stat strong{font-size:1.05rem}.toolbar{display:flex;gap:10px;align-items:end}.toolbar label{flex:1}.toolbar button{width:auto}.activity-log{list-style:none;padding:0;margin:14px 0;max-height:540px;overflow:auto;border:1px solid #374151;border-radius:10px}.activity-log li{padding:14px;border-bottom:1px solid #374151}.activity-log li:last-child{border:0}.entry-heading{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center}.entry-heading time{font-size:.9rem;font-variant-numeric:tabular-nums}.entry-meta,.entry-result{font-size:.87rem;line-height:1.5;margin:7px 0 0;overflow-wrap:anywhere}details{margin:18px 0}summary{cursor:pointer;color:#cbd5e1}#activityMessage{font-size:.9rem;line-height:1.5}button:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid #f9fafb;outline-offset:3px}</style></head><body>
 <h1>Duo Stock Monitor</h1><p>Checks stock every minute. Get an alert when availability changes, plus a status notification every 4 hours, in stock or out of stock.</p>
-<p><small>Notification times use EST (UTC−5), to the second. Keep your Mac awake with the backend and HTTPS tunnel running. Open this app from your iPhone Home Screen.</small></p>
+<p><small>Times use Eastern Time (EDT/EST), to the second, and adjust automatically for daylight saving time. Keep your Mac awake with the backend and HTTPS tunnel running. Open this app from your iPhone Home Screen.</small></p>
 <label>HTTPS tunnel URL<input id="server" type="url" placeholder="https://something.trycloudflare.com" autocomplete="off"></label>
 <label>Admin token<input id="token" type="password" placeholder="Paste token from Mac" autocomplete="off"></label>
 <button id="connect">Connect and subscribe this iPhone</button>
@@ -22,7 +22,7 @@
  <div class="toolbar"><label>Show recent checks<select id="historyLimit"><option value="120">Latest 120 (~2 hours)</option><option value="360">Latest 360 (~6 hours)</option><option value="1440">Latest 1,440 (~24 hours)</option></select></label><button id="refreshActivity">Refresh log</button></div>
  <p id="activityMessage" role="status">Enter your tunnel URL and token, then tap Refresh log. Refreshing the log does not send an extra request to Apple.</p>
  <ol id="activityLog" class="activity-log" aria-label="Recent Apple requests, newest first"><li>No checks loaded yet.</li></ol>
- <small>Refreshes every 15 seconds while this page is visible. Timestamps use EST (UTC−5). A long gap between requests may indicate sleep or downtime.</small>
+ <small>Refreshes every 15 seconds while this page is visible. Timestamps use Eastern Time (EDT/EST). A long gap between requests may indicate sleep or downtime.</small>
 </section>
 <details><summary>Backend details</summary><pre id="details"></pre></details>
 <small>The token is held in this app session only; don't put it in GitHub or share it. The HTTPS tunnel URL changes when restarted.</small>
@@ -52,8 +52,8 @@ async function api(path, method='GET', body){
 function publicKeyBytes(key){const b64=key.replace(/-/g,'+').replace(/_/g,'/');const raw=atob(b64+'='.repeat((4-b64.length%4)%4));return Uint8Array.from(raw,c=>c.charCodeAt(0));}
 async function action(fn){try{msg('Working...');await fn();}catch(e){msg('Error: '+e.message);}}
 let activityData=null, activityEnabled=false, activityBusy=false, activityVersion=0, activityConnected=false, serverOffset=0;
-const estFormatter = new Intl.DateTimeFormat('en-US',{timeZone:'Etc/GMT+5',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit',hour12:true});
-function estTime(value){return estFormatter.format(new Date(value))+' EST';}
+const easternFormatter = new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',timeZoneName:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit',hour12:true});
+function easternTime(value){return easternFormatter.format(new Date(value));}
 function elapsed(seconds){
  seconds=Math.max(0,Math.floor(seconds));
  if(seconds<60)return seconds+'s';
@@ -81,11 +81,11 @@ function renderActivity(data){
  activityData=data;activityConnected=true;serverOffset=Date.parse(data.server_time)-Date.now();
  $('successCount').textContent=data.success_count.toLocaleString();
  $('failureCount').textContent=data.failure_count.toLocaleString();
- $('activityMessage').textContent=`Showing ${data.entries.length} of ${data.retained_count} retained checks · Updated ${estTime(data.server_time)}.`;
+ $('activityMessage').textContent=`Showing ${data.entries.length} of ${data.retained_count} retained checks · Updated ${easternTime(data.server_time)}.`;
  const rows=data.entries.map(entry=>{
   const row=document.createElement('li');
   const heading=document.createElement('div');heading.className='entry-heading';
-  const time=document.createElement('time');time.dateTime=entry.started_at;time.textContent=estTime(entry.started_at);
+  const time=document.createElement('time');time.dateTime=entry.started_at;time.textContent=easternTime(entry.started_at);
   const badge=document.createElement('span');badge.className='badge '+(entry.ok?'good':'bad');badge.textContent=entry.ok?'Success':'Failed';
   heading.append(time,badge);
   const meta=document.createElement('p');meta.className='entry-meta muted';
@@ -151,7 +151,7 @@ $('connect').onclick=()=>action(async()=>{
  msg('iPhone subscribed! Tap Start monitoring to begin.');$('details').textContent=JSON.stringify(result,null,2);
  await refreshActivity();
 });
-$('start').onclick=()=>action(async()=>{const r=await api('/api/start','POST',{});msg('Monitoring started. First status arrives now; stock changes trigger alerts, with a status check every 4 hours.');$('details').textContent=JSON.stringify(r,null,2);await refreshActivity();});
+$('start').onclick=()=>action(async()=>{const r=await api('/api/start','POST',{});msg('Monitoring started. A push will confirm the start, followed by the first stock status.');$('details').textContent=JSON.stringify(r,null,2);await refreshActivity();});
 $('statusButton').onclick=()=>action(async()=>{const r=await api('/api/status');msg('Backend reachable.');$('details').textContent=JSON.stringify(r,null,2);await refreshActivity();});
-$('stop').onclick=()=>action(async()=>{const r=await api('/api/stop','POST',{});msg('Stop requested.');$('details').textContent=JSON.stringify(r,null,2);await refreshActivity();});
+$('stop').onclick=()=>action(async()=>{const r=await api('/api/stop','POST',{});msg(r.already_stopped?'Monitoring is already stopped.':'Stop requested. A push will confirm when monitoring has stopped.');$('details').textContent=JSON.stringify(r,null,2);await refreshActivity();});
 </script></body></html>

@@ -8,6 +8,7 @@ from collections import deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
 import requests
 from flask import Flask, jsonify, request
@@ -26,7 +27,7 @@ SKUS = {'White 256GB': 'MK1E4LL/A', 'Blue 256GB (verify)': 'MK1F4LL/A'}
 STORES = {'R299': 'Franklin Park', 'R230': 'Briarwood'}
 CHECK_INTERVAL_SECONDS = 60
 STATUS_INTERVAL_SECONDS = 4 * 60 * 60
-EST = timezone(timedelta(hours=-5), 'EST')
+EASTERN = ZoneInfo('America/New_York')
 HISTORY_LIMIT = 1440
 
 app = Flask(__name__)
@@ -34,7 +35,7 @@ CORS(app, resources={r'/api/*': {'origins': [ALLOWED_ORIGIN], 'allow_headers': [
 lock = threading.Lock()
 state = {'running': False, 'completed': 0, 'last_check': None, 'last_error': None,
          'started_at': None, 'last_inventory': None, 'last_notification_at': None,
-         'next_status_at': None}
+         'next_status_at': None, 'last_notification_error': None, 'stopped_at': None}
 stop_event = threading.Event()
 check_history = deque(maxlen=HISTORY_LIMIT)
 activity = {'in_flight': None}
@@ -111,7 +112,8 @@ def start():
         if state['running']: return jsonify(error='Monitor already running', **state), 409
         state.update(running=True, completed=0, last_check=None, last_error=None,
                      started_at=utc_now(), last_inventory=None,
-                     last_notification_at=None, next_status_at=None)
+                     last_notification_at=None, next_status_at=None,
+                     last_notification_error=None, stopped_at=None)
         stop_event.clear()
     threading.Thread(target=run_monitor, daemon=True).start()
     return jsonify(ok=True, continuous=True, interval_seconds=CHECK_INTERVAL_SECONDS,
@@ -119,8 +121,12 @@ def start():
 
 @app.post('/api/stop')
 def stop():
-    stop_event.set()
-    return jsonify(ok=True, stopping=True)
+    with lock:
+        if not state['running']:
+            return jsonify(ok=True, stopping=False, already_stopped=True)
+        already_stopping = stop_event.is_set()
+        stop_event.set()
+    return jsonify(ok=True, stopping=True, already_stopping=already_stopping)
 
 def check_inventory():
     params = [('pl','true'),('mts.0','regular'),('location',ZIP)]
@@ -184,9 +190,14 @@ def parse_inventory(payload):
     return inventory
 
 def notification_payload(inventory, reason, checked_at):
-    checked = datetime.fromisoformat(checked_at).astimezone(EST)
-    timestamp = checked.strftime('%Y-%m-%d %I:%M:%S %p EST')
-    if inventory is None:
+    checked = datetime.fromisoformat(checked_at).astimezone(EASTERN)
+    timestamp = checked.strftime('%Y-%m-%d %I:%M:%S %p %Z')
+    if reason in ('started', 'stopped'):
+        title = f'Duo monitoring {reason}'
+        lines = [f'{reason.capitalize()}: {timestamp}',
+                 'Checking stock every minute. Stock alerts and 4-hour status checks are active.'
+                 if reason == 'started' else 'Stock checks and scheduled alerts are paused.']
+    elif inventory is None:
         title = 'Duo monitor needs attention'
         lines = ['Stock could not be verified. Retrying every minute.']
     else:
@@ -196,12 +207,13 @@ def notification_payload(inventory, reason, checked_at):
         for store, items in inventory.items():
             available = [name for name, in_stock in items.items() if in_stock]
             lines.append(f'{store}: ' + (', '.join(available) + ' in stock' if available else 'Out of stock'))
-    captions = {'started': 'Monitoring started · Checking every minute',
+    captions = {'initial_status': 'Initial stock check · Monitoring is active',
                 'stock_change': 'Stock availability changed',
                 'heartbeat': '4-hour status check · Monitoring is active',
                 'recovered': 'Inventory checks are working again',
                 'error': 'Inventory check failed'}
-    lines = [f'Checked: {timestamp}'] + lines + [captions[reason]]
+    if reason not in ('started', 'stopped'):
+        lines = [f'Checked: {timestamp}'] + lines + [captions[reason]]
     return {'title': title, 'body': '\n'.join(lines), 'checked_at': checked_at,
             'sent_at': utc_now(), 'reason': reason,
             'check_id': secrets.token_hex(8), 'url': './'}
@@ -214,6 +226,18 @@ def send_notification(inventory, reason, checked_at):
     print(f'[{payload["sent_at"]}] Push sent ({reason}): {payload["body"]}', flush=True)
     return payload['sent_at']
 
+def send_lifecycle_notification(reason, event_at):
+    try:
+        sent_at = send_notification(None, reason, event_at)
+    except (WebPushException, OSError, ValueError, requests.RequestException) as exc:
+        error = f'{type(exc).__name__}: {exc}'
+        with lock:
+            state['last_notification_error'] = error
+        print(f'[{utc_now()}] {reason.capitalize()} push failed: {error}', flush=True)
+    else:
+        with lock:
+            state.update(last_notification_at=sent_at, last_notification_error=None)
+
 def run_monitor():
     last_notified_inventory = None
     last_status_sent = None
@@ -222,6 +246,7 @@ def run_monitor():
     recovery_pending = False
     index = 0
     try:
+        send_lifecycle_notification('started', utc_now())
         while not stop_event.is_set():
             index += 1
             next_check = time.monotonic() + CHECK_INTERVAL_SECONDS
@@ -247,7 +272,7 @@ def run_monitor():
                 if recovery_pending:
                     reason = 'recovered'
                 elif last_notified_inventory is None:
-                    reason = 'started'
+                    reason = 'initial_status'
                 elif inventory != last_notified_inventory:
                     reason = 'stock_change'
                 else:
@@ -262,6 +287,7 @@ def run_monitor():
                         error_notification_pending = False
                     with lock:
                         state['last_notification_at'] = sent_at
+                        state['last_notification_error'] = None
                         if status_due:
                             last_status_sent = time.monotonic()
                             state['next_status_at'] = (
@@ -270,13 +296,18 @@ def run_monitor():
                 except (WebPushException, OSError, ValueError, requests.RequestException) as exc:
                     push_error = f'{type(exc).__name__}: {exc}'
                     error = f'{error}; push failed: {push_error}' if error else f'Push failed: {push_error}'
+                    with lock:
+                        state['last_notification_error'] = push_error
                     print(f'[{utc_now()}] {error}', flush=True)
             with lock:
                 state.update(completed=index, last_check=checked_at, last_error=error,
                              last_inventory=inventory)
             if stop_event.wait(max(0, next_check - time.monotonic())): break
     finally:
-        with lock: state['running']=False
+        stopped_at = utc_now()
+        send_lifecycle_notification('stopped', stopped_at)
+        with lock:
+            state.update(running=False, stopped_at=stopped_at, next_status_at=None)
         print('Monitor stopped', flush=True)
 
 if __name__ == '__main__':

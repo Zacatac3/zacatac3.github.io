@@ -4,14 +4,19 @@ This runs locally on the Mac, behind your existing HTTPS tunnel. Keep the Mac
 awake, the backend running, and the tunnel connected for notifications to work.
 
 - Checks Franklin Park and Briarwood every 60 seconds until stopped.
-- Sends a status immediately on start, then alerts when any monitored store or
+- Sends a dedicated push when monitoring starts and when it finishes stopping.
+  Stopping waits for any active request to finish; repeated stop requests do
+  not send duplicate stop pushes. Push delivery failures appear in backend
+  status as `last_notification_error` and do not prevent starting or stopping.
+- Sends an initial stock status on start, then alerts when any monitored store or
   variant changes availability.
 - Sends a fresh status every four hours whether stock is available or not.
   Stock-change alerts do not postpone the four-hour status check.
 - Reports failed checks without claiming stock is unavailable, retries every
   minute, and sends a recovery notification when inventory checks work again.
-- Notification bodies include the inventory check time to the second in fixed
-  EST (UTC−5), including during daylight saving time.
+- Notification bodies and website activity times use `America/New_York` to
+  show Eastern Time to the second: EDT during daylight saving time and EST
+  during standard time. Start/stop pushes show the time of the event.
 - The website's Apple request activity log refreshes every 15 seconds while
   visible. It records actual Apple requests on the backend while the page is
   closed, including failures, HTTP status, duration, stock results, and gaps
