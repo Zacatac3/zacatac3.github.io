@@ -31,6 +31,7 @@
  </div>
  <div class="toolbar"><label>Show recent checks<select id="historyLimit"><option value="120">Latest 120 (~2 hours)</option><option value="360">Latest 360 (~6 hours)</option><option value="1440">Latest 1,440 (~24 hours)</option></select></label><button id="refreshActivity">Refresh log</button></div>
  <p id="activityMessage" role="status">Enter your tunnel URL and token, then tap Refresh log. Refreshing the log does not send an extra request to Apple.</p>
+ <p id="pushTiming" class="muted" role="status">Push timing will appear after the backend sends a notification.</p>
  <ol id="activityLog" class="activity-log" aria-label="Recent Apple requests, newest first"><li>No checks loaded yet.</li></ol>
  <small>Refreshes every 15 seconds while this page is visible. Timestamps use Eastern Time (EDT/EST). A long gap between requests may indicate sleep or downtime.</small>
 </section>
@@ -137,6 +138,7 @@ function renderActivity(data){
  if(!modeBusy)updateModeView(data);
  $('successCount').textContent=data.success_count.toLocaleString();
  $('failureCount').textContent=data.failure_count.toLocaleString();
+ $('pushTiming').textContent=data.last_push?`Last push accepted ${easternTime(data.last_push.accepted_at)} · ${data.last_push.submission_ms} ms to submit · ${data.last_push.urgency} urgency. Acceptance does not confirm iPhone delivery.`:'No push timing recorded since the backend restarted.';
  $('activityMessage').textContent=`Showing ${data.entries.length} of ${data.retained_count} retained checks · Updated ${easternTime(data.server_time)}.`;
  const rows=data.entries.map(entry=>{
   const row=document.createElement('li');
@@ -149,6 +151,7 @@ function renderActivity(data){
   const duration=entry.duration_ms<1000?entry.duration_ms+' ms':(entry.duration_ms/1000).toFixed(2)+' s';
   meta.textContent=(entry.http_status?'HTTP '+entry.http_status:'No HTTP response')+' · '+duration+(entry.gap_seconds===null?' · First recorded request':' · '+elapsed(entry.gap_seconds)+' since previous');
   if(entry.gap_seconds>data.check_interval_seconds*2+30)meta.classList.add('warning');
+  if(entry.push)meta.textContent+=` · Push accepted ${easternTime(entry.push.accepted_at)} (${entry.push.submission_ms} ms, ${entry.push.urgency})`;
   const result=renderStock(entry.ok?entry.inventory:null,entry.test_mode===true);
   if(!entry.ok){const error=document.createElement('p');error.textContent=entry.error||'Inventory could not be verified.';result.append(error);}
   row.append(heading,meta,result);return row;
@@ -209,6 +212,7 @@ for(const id of ['server','token'])$(id).addEventListener('input',()=>{
  $('activityState').textContent='Not connected';$('activityState').className='badge';
  $('activityMessage').textContent='Tap Refresh log to load activity using these credentials.';
  $('activityLog').replaceChildren();
+ $('pushTiming').textContent='Push timing will appear after connecting.';
  $('testMode').disabled=true;$('testMode').checked=false;
  $('modeStatus').textContent='Refresh the log to load the mode for this backend.';$('modeStatus').className='muted';
  $('connectionStorage').textContent='Connection edited. Tap Save connection or use a control to save these changes.';

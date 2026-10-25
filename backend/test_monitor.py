@@ -422,6 +422,44 @@ class MonitorTests(unittest.TestCase):
                                              (OUT, 'initial_status', False), (TEST_IN, 'in_stock', True)]:
             self.assertNotIn('🚨', monitor.notification_payload(inventory, reason, STAMP, test_mode)['title'])
 
+    def test_positive_stock_pushes_request_high_urgency_and_record_acceptance(self):
+        accepted = '2026-10-24T20:34:56.999+00:00'
+        for inventory, test_mode in [(IN, False), (TEST_IN, True), (OUT, False), (None, False)]:
+            with patch.object(monitor, 'SUB_FILE') as subscription, \
+                 patch.object(monitor, 'webpush', return_value=Mock(status_code=201)) as push, \
+                 patch.object(monitor, 'utc_now', side_effect=[STAMP, accepted]), \
+                 patch.object(monitor.time, 'monotonic', side_effect=[1, 1.21]), redirect_stdout(io.StringIO()):
+                subscription.read_text.return_value = '{}'
+                returned = monitor.send_notification(inventory, 'in_stock' if inventory else 'error', STAMP, test_mode)
+            expected = 'high' if inventory in (IN, TEST_IN) else 'normal'
+            self.assertEqual(push.call_args.kwargs['headers'], {'Urgency': expected})
+            self.assertEqual(returned, accepted)
+            self.assertEqual(monitor.state['last_push']['submitted_at'], STAMP)
+            self.assertEqual(monitor.state['last_push']['accepted_at'], accepted)
+            self.assertEqual(monitor.state['last_push']['submission_ms'], 210)
+
+    def test_failed_push_does_not_claim_acceptance(self):
+        with patch.object(monitor, 'SUB_FILE') as subscription, \
+             patch.object(monitor, 'webpush', side_effect=OSError('offline')):
+            subscription.read_text.return_value = '{}'
+            with self.assertRaises(OSError):
+                monitor.send_notification(IN, 'in_stock', STAMP)
+        self.assertIsNone(monitor.state['last_push'])
+
+    def test_stock_push_timing_is_retained_with_its_request(self):
+        monitor.check_history.append({'completed_at': STAMP, 'test_mode': False})
+        with patch.object(monitor, 'SUB_FILE') as subscription, \
+             patch.object(monitor, 'webpush', return_value=Mock(status_code=201)), redirect_stdout(io.StringIO()):
+            subscription.read_text.return_value = '{}'
+            monitor.send_notification(IN, 'in_stock', STAMP)
+        self.assertEqual(monitor.check_history[-1]['push']['urgency'], 'high')
+        recorded = monitor.check_history[-1]['push']
+        with patch.object(monitor, 'SUB_FILE') as subscription, \
+             patch.object(monitor, 'webpush', return_value=Mock(status_code=201)), redirect_stdout(io.StringIO()):
+            subscription.read_text.return_value = '{}'
+            monitor.send_notification(None, 'stopped', STAMP)
+        self.assertEqual(monitor.check_history[-1]['push'], recorded)
+
     def test_stock_window_sends_each_positive_check_and_one_sold_out_update(self):
         sent, _ = self.run_checks(6, [OUT, IN, IN, IN, OUT, OUT])
         self.assertEqual([(t, reason) for t, reason, _ in sent],

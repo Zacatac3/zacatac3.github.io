@@ -28,6 +28,16 @@ service; monitoring must be started again after restarting the backend or Mac.
   An in-stock push title identifies the first available color and store.
 - Sends a fresh status every four hours whether stock is available or not.
   Stock-change alerts do not postpone the four-hour status check.
+- Requests `Urgency: high` for every positive stock push, including test-mode
+  positives. Other pushes use normal urgency. High urgency asks the push service
+  to attempt immediate delivery; it cannot guarantee arrival time or override
+  iPhone Focus, notification permissions, or Scheduled Summary settings.
+- The website and status endpoint show the last successful push's submission
+  duration and actual acceptance time. Acceptance means the push service
+  accepted the request, not that the phone displayed it. Older log timestamps
+  marked `Push sent` were taken before submission completed and do not measure
+  phone delivery latency. The polling interval remains 60 seconds, which can
+  add up to a minute of detection delay before push delivery begins.
 - Reports failed checks without claiming stock is unavailable, retries every
   minute, and sends a recovery notification when inventory checks work again.
 - Notification bodies and website activity times use `America/New_York` to

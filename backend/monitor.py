@@ -38,7 +38,7 @@ lock = threading.Lock()
 state = {'running': False, 'completed': 0, 'last_check': None, 'last_error': None,
          'started_at': None, 'last_inventory': None, 'last_notification_at': None,
          'next_status_at': None, 'last_notification_error': None, 'stopped_at': None,
-         'test_mode': False, 'mode_revision': 0}
+         'test_mode': False, 'mode_revision': 0, 'last_push': None}
 stop_event = threading.Event()
 check_history = deque(maxlen=HISTORY_LIMIT)
 activity = {'in_flight': None}
@@ -108,7 +108,8 @@ def recent_activity():
                   'capacity': HISTORY_LIMIT, 'success_count': sum(row['ok'] for row in retained),
                   'failure_count': sum(not row['ok'] for row in retained),
                   'in_flight': activity['in_flight'], 'running': state['running'],
-                  'started_at': state['started_at'], **mode_details(state['test_mode'])}
+                  'started_at': state['started_at'], 'last_push': state['last_push'],
+                  **mode_details(state['test_mode'])}
     result.update(server_time=utc_now(), check_interval_seconds=CHECK_INTERVAL_SECONDS)
     return jsonify(result)
 
@@ -274,10 +275,27 @@ def notification_payload(inventory, reason, checked_at, test_mode=False):
 def send_notification(inventory, reason, checked_at, test_mode=False):
     subscription = json.loads(SUB_FILE.read_text())
     payload = notification_payload(inventory, reason, checked_at, test_mode)
-    webpush(subscription_info=subscription, data=json.dumps(payload),
-            vapid_private_key=str(KEY_FILE), vapid_claims={'sub': VAPID_SUBJECT}, timeout=20)
-    print(f'[{payload["sent_at"]}] Push sent ({reason}): {payload["body"]}', flush=True)
-    return payload['sent_at']
+    in_stock = inventory is not None and any(
+        available for items in inventory.values() for available in items.values())
+    urgency = 'high' if in_stock else 'normal'
+    started = time.monotonic()
+    response = webpush(subscription_info=subscription, data=json.dumps(payload),
+                       vapid_private_key=str(KEY_FILE), vapid_claims={'sub': VAPID_SUBJECT},
+                       timeout=20, headers={'Urgency': urgency})
+    accepted_at = utc_now()
+    duration_ms = round((time.monotonic() - started) * 1000)
+    timing = {'checked_at': checked_at, 'submitted_at': payload['sent_at'],
+              'accepted_at': accepted_at, 'submission_ms': duration_ms,
+              'urgency': urgency, 'http_status': response.status_code,
+              'reason': reason, 'test_mode': test_mode}
+    with lock:
+        state['last_push'] = timing
+        if (reason not in ('started', 'stopped') and check_history
+                and check_history[-1].get('completed_at', '') <= checked_at
+                and check_history[-1].get('test_mode', False) == test_mode):
+            check_history[-1] = {**check_history[-1], 'push': timing}
+    print(f'[{accepted_at}] Push accepted ({reason}, {urgency}, {duration_ms} ms): {payload["body"]}', flush=True)
+    return accepted_at
 
 def send_lifecycle_notification(reason, event_at, test_mode=False):
     try:
