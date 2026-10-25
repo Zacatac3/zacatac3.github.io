@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#111827"><link rel="manifest" href="./manifest.json"><title>Duo Stock Monitor</title>
-<style>body{font:16px system-ui;background:#111827;color:#f9fafb;max-width:620px;margin:35px auto;padding:0 18px}input,button{font:inherit;padding:12px;margin:5px 0;width:100%;box-sizing:border-box;border-radius:8px}button{background:#60a5fa;color:#111827;border:0;font-weight:700}input{background:#1f2937;color:white;border:1px solid #64748b}pre{white-space:pre-wrap;overflow-wrap:anywhere}small{color:#cbd5e1}</style></head><body>
+<style>body{font:16px system-ui;background:#111827;color:#f9fafb;max-width:620px;margin:35px auto;padding:0 18px}input,button,select{font:inherit;padding:12px;margin:5px 0;width:100%;box-sizing:border-box;border-radius:8px}button{background:#60a5fa;color:#111827;border:0;font-weight:700;cursor:pointer}input,select{background:#1f2937;color:white;border:1px solid #64748b}pre{white-space:pre-wrap;overflow-wrap:anywhere}small,.muted{color:#cbd5e1}h2{font-size:1.3rem;margin:0}section{margin:26px 0;padding-top:22px;border-top:1px solid #374151}.activity-header{display:flex;align-items:center;justify-content:space-between;gap:12px}.badge{font-size:.8rem;font-weight:700;white-space:nowrap;border-radius:20px;padding:5px 10px;background:#374151;color:#e5e7eb}.good{background:#064e3b;color:#a7f3d0}.bad{background:#7f1d1d;color:#fecaca}.warning{background:#78350f;color:#fde68a}.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}.stat{padding:14px;background:#1f2937;border-radius:10px}.stat small{display:block;margin-bottom:6px}.stat strong{font-size:1.05rem}.toolbar{display:flex;gap:10px;align-items:end}.toolbar label{flex:1}.toolbar button{width:auto}.activity-log{list-style:none;padding:0;margin:14px 0;max-height:540px;overflow:auto;border:1px solid #374151;border-radius:10px}.activity-log li{padding:14px;border-bottom:1px solid #374151}.activity-log li:last-child{border:0}.entry-heading{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center}.entry-heading time{font-size:.9rem;font-variant-numeric:tabular-nums}.entry-meta,.entry-result{font-size:.87rem;line-height:1.5;margin:7px 0 0;overflow-wrap:anywhere}details{margin:18px 0}summary{cursor:pointer;color:#cbd5e1}#activityMessage{font-size:.9rem;line-height:1.5}button:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid #f9fafb;outline-offset:3px}</style></head><body>
 <h1>Duo Stock Monitor</h1><p>Checks stock every minute. Get an alert when availability changes, plus a status notification every 4 hours, in stock or out of stock.</p>
 <p><small>Notification times use EST (UTC−5), to the second. Keep your Mac awake with the backend and HTTPS tunnel running. Open this app from your iPhone Home Screen.</small></p>
 <label>HTTPS tunnel URL<input id="server" type="url" placeholder="https://something.trycloudflare.com" autocomplete="off"></label>
@@ -9,7 +9,22 @@
 <button id="start">Start monitoring</button>
 <button id="statusButton">Check backend status</button>
 <button id="stop">Stop monitoring</button>
-<p id="message" role="status">Ready.</p><pre id="details"></pre>
+<p id="message" role="status">Ready.</p>
+<section aria-labelledby="activityTitle">
+ <div class="activity-header"><h2 id="activityTitle">Apple request activity</h2><span id="activityState" class="badge" role="status">Not connected</span></div>
+ <p class="muted">Each scheduled stock request appears here, even while this page is closed. The latest 1,440 checks are kept in memory (about 24 hours); the log resets when the backend restarts.</p>
+ <div class="stats">
+  <div class="stat"><small>Monitoring session</small><strong id="sessionAge">—</strong></div>
+  <div class="stat"><small>Last Apple request</small><strong id="lastRequestAge">—</strong></div>
+  <div class="stat"><small>Successful checks retained</small><strong id="successCount">—</strong></div>
+  <div class="stat"><small>Failed checks retained</small><strong id="failureCount">—</strong></div>
+ </div>
+ <div class="toolbar"><label>Show recent checks<select id="historyLimit"><option value="120">Latest 120 (~2 hours)</option><option value="360">Latest 360 (~6 hours)</option><option value="1440">Latest 1,440 (~24 hours)</option></select></label><button id="refreshActivity">Refresh log</button></div>
+ <p id="activityMessage" role="status">Enter your tunnel URL and token, then tap Refresh log. Refreshing the log does not send an extra request to Apple.</p>
+ <ol id="activityLog" class="activity-log" aria-label="Recent Apple requests, newest first"><li>No checks loaded yet.</li></ol>
+ <small>Refreshes every 15 seconds while this page is visible. Timestamps use EST (UTC−5). A long gap between requests may indicate sleep or downtime.</small>
+</section>
+<details><summary>Backend details</summary><pre id="details"></pre></details>
 <small>The token is held in this app session only; don't put it in GitHub or share it. The HTTPS tunnel URL changes when restarted.</small>
 <script>
 const VAPID_PUBLIC_KEY = 'BK4YmrxPxLqA5h40KNDT8K-Ct3LHw62XHgFHavBEEbgOJ6dnVkXZL7TkxbEqbMGZhVZ4B4NVv38ZDuh29x4SgIU';
@@ -36,6 +51,88 @@ async function api(path, method='GET', body){
 }
 function publicKeyBytes(key){const b64=key.replace(/-/g,'+').replace(/_/g,'/');const raw=atob(b64+'='.repeat((4-b64.length%4)%4));return Uint8Array.from(raw,c=>c.charCodeAt(0));}
 async function action(fn){try{msg('Working...');await fn();}catch(e){msg('Error: '+e.message);}}
+let activityData=null, activityEnabled=false, activityBusy=false, activityVersion=0, activityConnected=false, serverOffset=0;
+const estFormatter = new Intl.DateTimeFormat('en-US',{timeZone:'Etc/GMT+5',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit',hour12:true});
+function estTime(value){return estFormatter.format(new Date(value))+' EST';}
+function elapsed(seconds){
+ seconds=Math.max(0,Math.floor(seconds));
+ if(seconds<60)return seconds+'s';
+ if(seconds<3600)return Math.floor(seconds/60)+'m '+seconds%60+'s';
+ return Math.floor(seconds/3600)+'h '+Math.floor(seconds%3600/60)+'m';
+}
+function updateActivityAges(){
+ if(!activityData)return;
+ const now=Date.now()+serverOffset;
+ $('sessionAge').textContent=activityData.running&&activityData.started_at?elapsed((now-Date.parse(activityData.started_at))/1000):'Stopped';
+ const latest=activityData.in_flight?.started_at||activityData.entries[0]?.started_at;
+ const age=latest?(now-Date.parse(latest))/1000:null;
+ $('lastRequestAge').textContent=age===null?'No checks yet':elapsed(age)+' ago';
+ let label='Stopped', style='badge';
+ if(!activityConnected){label='Connection lost';style+=' bad';}
+ else if(activityData.running){
+  if(age!==null&&age>activityData.check_interval_seconds*2+30){label='Checks delayed';style+=' warning';}
+  else if(activityData.in_flight){label='Checking Apple';}
+  else if(activityData.entries[0]&&!activityData.entries[0].ok){label='Last check failed';style+=' bad';}
+  else{label='Monitoring';style+=' good';}
+ }
+ $('activityState').textContent=label;$('activityState').className=style;
+}
+function renderActivity(data){
+ activityData=data;activityConnected=true;serverOffset=Date.parse(data.server_time)-Date.now();
+ $('successCount').textContent=data.success_count.toLocaleString();
+ $('failureCount').textContent=data.failure_count.toLocaleString();
+ $('activityMessage').textContent=`Showing ${data.entries.length} of ${data.retained_count} retained checks · Updated ${estTime(data.server_time)}.`;
+ const rows=data.entries.map(entry=>{
+  const row=document.createElement('li');
+  const heading=document.createElement('div');heading.className='entry-heading';
+  const time=document.createElement('time');time.dateTime=entry.started_at;time.textContent=estTime(entry.started_at);
+  const badge=document.createElement('span');badge.className='badge '+(entry.ok?'good':'bad');badge.textContent=entry.ok?'Success':'Failed';
+  heading.append(time,badge);
+  const meta=document.createElement('p');meta.className='entry-meta muted';
+  const duration=entry.duration_ms<1000?entry.duration_ms+' ms':(entry.duration_ms/1000).toFixed(2)+' s';
+  meta.textContent=(entry.http_status?'HTTP '+entry.http_status:'No HTTP response')+' · '+duration+(entry.gap_seconds===null?' · First recorded request':' · '+elapsed(entry.gap_seconds)+' since previous');
+  if(entry.gap_seconds>data.check_interval_seconds*2+30)meta.classList.add('warning');
+  const result=document.createElement('p');result.className='entry-result';
+  result.textContent=entry.ok?Object.entries(entry.inventory).map(([store,items])=>{const available=Object.entries(items).filter(([,inStock])=>inStock).map(([name])=>name);return store+': '+(available.length?available.join(', ')+' in stock':'Out of stock');}).join(' · '):entry.error||'Inventory could not be verified.';
+  row.append(heading,meta,result);return row;
+ });
+ if(!rows.length){const row=document.createElement('li');row.textContent=data.in_flight?'Waiting for the current Apple request to finish.':'No requests recorded yet. Start monitoring to begin.';rows.push(row);}
+ const scroll=$('activityLog').scrollTop;
+ $('activityLog').replaceChildren(...rows);$('activityLog').scrollTop=scroll;
+ updateActivityAges();
+}
+async function refreshActivity(quiet=false){
+ if(activityBusy)return;
+ activityBusy=true;const version=activityVersion;
+ const controller=new AbortController();const timeout=setTimeout(()=>controller.abort(),10000);
+ try{
+  const {server,token}=credentials();
+  activityEnabled=true;
+  if(!quiet)$('activityMessage').textContent='Loading recent Apple requests…';
+  const response=await fetch(server+'/api/activity?limit='+$('historyLimit').value,{headers:{'Authorization':'Bearer '+token},cache:'no-store',signal:controller.signal});
+  if(version!==activityVersion)return;
+  if(!response.ok)throw Error(response.status===404?'Backend update required to show request activity.':'Could not load log (HTTP '+response.status+').');
+  const data=await response.json();
+  if(version===activityVersion)renderActivity(data);
+ }catch(e){
+  if(version!==activityVersion)return;
+  activityConnected=false;
+  $('activityState').textContent='Connection lost';$('activityState').className='badge bad';
+  $('activityMessage').textContent=(e.name==='AbortError'?'Log request timed out.':e.message)+(activityData?' Showing the last loaded history; new checks could not be confirmed.':'');
+  updateActivityAges();
+ }finally{clearTimeout(timeout);activityBusy=false;}
+}
+$('refreshActivity').onclick=()=>refreshActivity();
+$('historyLimit').onchange=()=>refreshActivity();
+for(const id of ['server','token'])$(id).addEventListener('input',()=>{
+ activityVersion++;activityEnabled=false;activityData=null;activityConnected=false;
+ for(const stat of ['sessionAge','lastRequestAge','successCount','failureCount'])$(stat).textContent='—';
+ $('activityState').textContent='Not connected';$('activityState').className='badge';
+ $('activityMessage').textContent='Tap Refresh log to load activity using these credentials.';
+ $('activityLog').replaceChildren();
+});
+setInterval(()=>{updateActivityAges();if(activityEnabled&&!document.hidden)refreshActivity(true);},15000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&activityEnabled)refreshActivity(true);});
 $('connect').onclick=()=>action(async()=>{
  credentials();
  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) throw Error('Install this site to your iPhone Home Screen and open it there.');
@@ -52,8 +149,9 @@ $('connect').onclick=()=>action(async()=>{
  if(!sub)sub=await ready.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:publicKeyBytes(VAPID_PUBLIC_KEY)});
  const result=await api('/api/subscribe','POST',sub.toJSON());
  msg('iPhone subscribed! Tap Start monitoring to begin.');$('details').textContent=JSON.stringify(result,null,2);
+ await refreshActivity();
 });
-$('start').onclick=()=>action(async()=>{const r=await api('/api/start','POST',{});msg('Monitoring started. First status arrives now; stock changes trigger alerts, with a status check every 4 hours.');$('details').textContent=JSON.stringify(r,null,2);});
-$('statusButton').onclick=()=>action(async()=>{const r=await api('/api/status');msg('Backend reachable.');$('details').textContent=JSON.stringify(r,null,2);});
-$('stop').onclick=()=>action(async()=>{const r=await api('/api/stop','POST',{});msg('Stop requested.');$('details').textContent=JSON.stringify(r,null,2);});
+$('start').onclick=()=>action(async()=>{const r=await api('/api/start','POST',{});msg('Monitoring started. First status arrives now; stock changes trigger alerts, with a status check every 4 hours.');$('details').textContent=JSON.stringify(r,null,2);await refreshActivity();});
+$('statusButton').onclick=()=>action(async()=>{const r=await api('/api/status');msg('Backend reachable.');$('details').textContent=JSON.stringify(r,null,2);await refreshActivity();});
+$('stop').onclick=()=>action(async()=>{const r=await api('/api/stop','POST',{});msg('Stop requested.');$('details').textContent=JSON.stringify(r,null,2);await refreshActivity();});
 </script></body></html>

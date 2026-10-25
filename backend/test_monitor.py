@@ -39,10 +39,17 @@ class FakeClock:
 class MonitorTests(unittest.TestCase):
     def setUp(self):
         self.original_state = copy.deepcopy(monitor.state)
+        self.original_history = list(monitor.check_history)
+        self.original_activity = dict(monitor.activity)
+        monitor.check_history.clear()
+        monitor.activity['in_flight'] = None
 
     def tearDown(self):
         monitor.state.clear()
         monitor.state.update(self.original_state)
+        monitor.check_history.clear()
+        monitor.check_history.extend(self.original_history)
+        monitor.activity.update(self.original_activity)
 
     def run_checks(self, checks, inventory=OUT, send_failure=None):
         clock = FakeClock(checks)
@@ -148,6 +155,7 @@ class MonitorTests(unittest.TestCase):
                   else 'unavailable'} for color, sku in monitor.SKUS.items()}}
                   for store_id in monitor.STORES]
         response = Mock()
+        response.status_code = 200
         response.json.return_value = {'head': {'status': '200'}, 'body': {'stores': stores}}
         with patch.object(monitor.requests, 'get', return_value=response):
             self.assertEqual(monitor.check_inventory(), IN)
@@ -173,12 +181,87 @@ class MonitorTests(unittest.TestCase):
 
     def test_invalid_inventory_responses_are_reported_as_check_failures(self):
         response = Mock()
+        response.status_code = 200
         for payload in [None, [], {'head': None}, {'head': {'status': '200'}, 'body': None},
                         {'head': {'status': '200'}, 'body': {'stores': [None]}}]:
             response.json.return_value = payload
             with self.subTest(payload=payload), patch.object(monitor.requests, 'get', return_value=response):
                 with self.assertRaises(ValueError):
                     monitor.check_inventory()
+
+    def test_activity_records_success_duration_and_gap(self):
+        response = Mock(status_code=200)
+        monitor.check_history.append({'started_at': '2026-10-24T20:33:56.789+00:00'})
+        with patch.object(monitor.requests, 'get', return_value=response), \
+             patch.object(monitor, 'parse_inventory', return_value=OUT), \
+             patch.object(monitor, 'utc_now', side_effect=[STAMP, '2026-10-24T20:34:56.914+00:00']), \
+             patch.object(monitor.time, 'monotonic', side_effect=[10, 10.125]):
+            self.assertEqual(monitor.check_inventory(), OUT)
+        entry = monitor.check_history[-1]
+        self.assertTrue(entry['ok'])
+        self.assertEqual(entry['http_status'], 200)
+        self.assertEqual(entry['duration_ms'], 125)
+        self.assertEqual(entry['gap_seconds'], 60)
+        self.assertIsNone(entry['error'])
+        self.assertIsNone(monitor.activity['in_flight'])
+
+    def test_activity_records_http_failures_and_timeouts(self):
+        response = Mock(status_code=503)
+        response.raise_for_status.side_effect = requests.HTTPError('Apple unavailable')
+        with patch.object(monitor.requests, 'get', return_value=response):
+            with self.assertRaises(requests.HTTPError):
+                monitor.check_inventory()
+        self.assertEqual(monitor.check_history[-1]['http_status'], 503)
+        self.assertFalse(monitor.check_history[-1]['ok'])
+        with patch.object(monitor.requests, 'get', side_effect=requests.Timeout('No response')):
+            with self.assertRaises(requests.Timeout):
+                monitor.check_inventory()
+        self.assertEqual(len(monitor.check_history), 2)
+        self.assertIsNone(monitor.check_history[-1]['http_status'])
+        self.assertIn('No response', monitor.check_history[-1]['error'])
+        self.assertIsNone(monitor.activity['in_flight'])
+
+    def test_activity_records_invalid_inventory_as_failure_even_with_http_200(self):
+        response = Mock(status_code=200)
+        response.json.return_value = {'head': {'status': '500'}}
+        with patch.object(monitor.requests, 'get', return_value=response):
+            with self.assertRaises(ValueError):
+                monitor.check_inventory()
+        self.assertEqual(monitor.check_history[-1]['http_status'], 200)
+        self.assertFalse(monitor.check_history[-1]['ok'])
+        self.assertIsNone(monitor.check_history[-1]['inventory'])
+
+    def test_activity_shows_in_flight_request(self):
+        response = Mock(status_code=200)
+        def request_in_progress(*args, **kwargs):
+            data = monitor.app.test_client().get('/api/activity', headers={
+                'Authorization': 'Bearer ' + monitor.ADMIN_TOKEN}).json
+            self.assertIsNotNone(data['in_flight'])
+            self.assertEqual(data['retained_count'], 0)
+            return response
+        with patch.object(monitor.requests, 'get', side_effect=request_in_progress), \
+             patch.object(monitor, 'parse_inventory', return_value=OUT):
+            monitor.check_inventory()
+        self.assertIsNone(monitor.activity['in_flight'])
+
+    def test_activity_api_limits_history_and_never_triggers_apple_request(self):
+        for index in range(1450):
+            stamp = (datetime(2026, 10, 24, tzinfo=timezone.utc) + timedelta(minutes=index)).isoformat()
+            monitor.check_history.append({'started_at': stamp, 'ok': index % 2 == 0})
+        client = monitor.app.test_client()
+        headers = {'Authorization': 'Bearer ' + monitor.ADMIN_TOKEN}
+        self.assertEqual(client.get('/api/activity').status_code, 401)
+        with patch.object(monitor.requests, 'get') as apple_request:
+            data = client.get('/api/activity?limit=2', headers=headers).json
+            apple_request.assert_not_called()
+        self.assertEqual(data['retained_count'], 1440)
+        self.assertEqual(data['success_count'], 720)
+        self.assertEqual(data['failure_count'], 720)
+        self.assertEqual(len(data['entries']), 2)
+        self.assertGreater(data['entries'][0]['started_at'], data['entries'][1]['started_at'])
+        self.assertEqual(data['entries'][0], monitor.check_history[-1])
+        for limit in ['0', '1441', 'invalid']:
+            self.assertEqual(client.get('/api/activity?limit='+limit, headers=headers).status_code, 400)
 
 
 if __name__ == '__main__':

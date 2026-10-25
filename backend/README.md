@@ -12,6 +12,14 @@ awake, the backend running, and the tunnel connected for notifications to work.
   minute, and sends a recovery notification when inventory checks work again.
 - Notification bodies include the inventory check time to the second in fixed
   EST (UTC−5), including during daylight saving time.
+- The website's Apple request activity log refreshes every 15 seconds while
+  visible. It records actual Apple requests on the backend while the page is
+  closed, including failures, HTTP status, duration, stock results, and gaps
+  between requests. Refreshing the page log never triggers an Apple request.
+- Only the latest 1,440 requests (about 24 hours) are retained in memory. The
+  website can show the latest 120, 360, or 1,440. History survives stopping and
+  starting monitoring but clears when the backend process restarts. The log
+  starts with this update; earlier requests are not reconstructed.
 - Monitoring and its four-hour schedule restart when you restart the backend
   and start monitoring again. Missed checks while the Mac sleeps are not replayed.
 

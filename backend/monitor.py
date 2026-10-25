@@ -4,6 +4,7 @@ import os
 import secrets
 import threading
 import time
+from collections import deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
@@ -26,6 +27,7 @@ STORES = {'R299': 'Franklin Park', 'R230': 'Briarwood'}
 CHECK_INTERVAL_SECONDS = 60
 STATUS_INTERVAL_SECONDS = 4 * 60 * 60
 EST = timezone(timedelta(hours=-5), 'EST')
+HISTORY_LIMIT = 1440
 
 app = Flask(__name__)
 CORS(app, resources={r'/api/*': {'origins': [ALLOWED_ORIGIN], 'allow_headers': ['Authorization', 'Content-Type'], 'methods': ['GET', 'POST', 'OPTIONS']}})
@@ -34,6 +36,8 @@ state = {'running': False, 'completed': 0, 'last_check': None, 'last_error': Non
          'started_at': None, 'last_inventory': None, 'last_notification_at': None,
          'next_status_at': None}
 stop_event = threading.Event()
+check_history = deque(maxlen=HISTORY_LIMIT)
+activity = {'in_flight': None}
 
 def utc_now():
     return datetime.now(timezone.utc).isoformat(timespec='milliseconds')
@@ -81,6 +85,24 @@ def status():
                   status_interval_seconds=STATUS_INTERVAL_SECONDS)
     return jsonify(result)
 
+@app.get('/api/activity')
+def recent_activity():
+    try:
+        limit = int(request.args.get('limit', '120'))
+    except ValueError:
+        return jsonify(error='Log limit must be a number'), 400
+    if not 1 <= limit <= HISTORY_LIMIT:
+        return jsonify(error=f'Log limit must be between 1 and {HISTORY_LIMIT}'), 400
+    with lock:
+        retained = list(check_history)
+        result = {'entries': retained[-limit:][::-1], 'retained_count': len(retained),
+                  'capacity': HISTORY_LIMIT, 'success_count': sum(row['ok'] for row in retained),
+                  'failure_count': sum(not row['ok'] for row in retained),
+                  'in_flight': activity['in_flight'], 'running': state['running'],
+                  'started_at': state['started_at']}
+    result.update(server_time=utc_now(), check_interval_seconds=CHECK_INTERVAL_SECONDS)
+    return jsonify(result)
+
 @app.post('/api/start')
 def start():
     if not SUB_FILE.exists(): return jsonify(error='Subscribe your iPhone first'), 400
@@ -103,10 +125,36 @@ def stop():
 def check_inventory():
     params = [('pl','true'),('mts.0','regular'),('location',ZIP)]
     params += [(f'parts.{i}', sku) for i, sku in enumerate(SKUS.values())]
-    response = requests.get('https://www.apple.com/shop/retail/pickup-message', params=params, timeout=20,
-                            headers={'User-Agent':'Mozilla/5.0','Accept':'application/json'})
-    response.raise_for_status()
-    payload = response.json()
+    started_at = utc_now()
+    started = time.monotonic()
+    with lock:
+        previous_at = check_history[-1]['started_at'] if check_history else None
+        activity['in_flight'] = {'started_at': started_at}
+    response = None
+    inventory = None
+    error = None
+    try:
+        response = requests.get('https://www.apple.com/shop/retail/pickup-message', params=params, timeout=20,
+                                headers={'User-Agent':'Mozilla/5.0','Accept':'application/json'})
+        response.raise_for_status()
+        inventory = parse_inventory(response.json())
+        return inventory
+    except Exception as exc:
+        error = f'{type(exc).__name__}: {exc}'[:500]
+        raise
+    finally:
+        entry = {'started_at': started_at, 'completed_at': utc_now(),
+                 'duration_ms': round((time.monotonic() - started) * 1000),
+                 'http_status': response.status_code if response is not None else None,
+                 'ok': inventory is not None, 'inventory': inventory, 'error': error,
+                 'gap_seconds': round((datetime.fromisoformat(started_at) -
+                                       datetime.fromisoformat(previous_at)).total_seconds(), 1)
+                                if previous_at else None}
+        with lock:
+            check_history.append(entry)
+            activity['in_flight'] = None
+
+def parse_inventory(payload):
     if not isinstance(payload, dict) or not isinstance(payload.get('head'), dict):
         raise ValueError('Invalid Apple inventory response')
     if str(payload['head'].get('status')) != '200':
