@@ -20,8 +20,10 @@ service; monitoring must be started again after restarting the backend or Mac.
   postpone the four-hour status schedule. The one-minute samples and request log
   show the observed availability window, rather than its exact start/end seconds.
 - Stock notifications show one compact line per store, followed by the Eastern
-  timestamp: `Franklin Park: White IN, Blue OOS`. Storage is omitted, `IN` means
-  in stock, `OOS` means out of stock, and `?` means the check failed. Test mode
+  timestamp: `Franklin Park: White IN STOCK, Blue OOS`. Both available colors
+  share the compact label `White+Blue IN STOCK`. Storage is omitted, `OOS`
+  means out of stock, and `?` means the check failed. Only real Duo availability
+  gets a `🚨 DUO IN STOCK` title; startup, OOS, error, and test pushes do not. Test mode
   uses Burgundy and a `TEST 18 Pro` title. The website log retains full labels.
   An in-stock push title identifies the first available color and store.
 - Sends a fresh status every four hours whether stock is available or not.
@@ -67,6 +69,14 @@ On the iPhone, reopen the updated Home Screen app, connect with the same tunnel
 URL and admin token, and tap **Start monitoring**. **Stop monitoring** pauses
 checks and notifications. The status endpoint includes the most recent stock
 result, notification time, and the next four-hour status time in UTC.
+
+The website saves the tunnel URL and admin token together in this device's
+local storage when you save or use the connection. It restores them and loads
+the log when you reopen the app. Edit/save the fields to change computers or
+tunnels; **Forget saved connection** removes the local pair without stopping
+the backend or unsubscribing push. Clearing website data also clears the saved
+connection. If device storage is unavailable, the page reports that the
+connection can only be used for the current session.
 
 The private key, admin token, subscription, and virtual environment remain
 ignored by Git. Only backend source, requirements, documentation, and tests

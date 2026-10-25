@@ -235,10 +235,14 @@ def compact_stock_lines(inventory, test_mode=False):
     lines = []
     for store in stores:
         by_color = {option['color']: option['available'] for option in options if option['store'] == store}
+        if all(value is True for value in by_color.values()):
+            colors = '+'.join(SHORT_COLORS[color] for color in by_color)
+            lines.append(f'{store}: {colors} IN STOCK')
+            continue
         statuses = []
         for color in (TEST_SKUS if test_mode else SKUS):
             available = by_color[color]
-            status = 'IN' if available is True else 'OOS' if available is False else '?'
+            status = 'IN STOCK' if available is True else 'OOS' if available is False else '?'
             statuses.append(f'{SHORT_COLORS[color]} {status}')
         lines.append(f'{store}: ' + ', '.join(statuses))
     return lines
@@ -258,7 +262,8 @@ def notification_payload(inventory, reason, checked_at, test_mode=False):
         title = 'Duo · 4h status · OOS' if reason == 'heartbeat' else 'Duo · Out of stock'
         if available:
             first = available[0]
-            title = f'In stock: {SHORT_COLORS[first["color"]]} · {first["store"]}'
+            prefix = 'IN STOCK' if test_mode else '🚨 DUO IN STOCK'
+            title = f'{prefix}: {SHORT_COLORS[first["color"]]} · {first["store"]}'
         lines = compact_stock_lines(inventory, test_mode) + [timestamp]
     if test_mode:
         title = 'TEST 18 Pro · ' + title.removeprefix('Duo · ').removeprefix('Duo ')

@@ -208,9 +208,9 @@ class MonitorTests(unittest.TestCase):
 
     def test_notification_shows_available_store_and_variant(self):
         payload = monitor.notification_payload(IN, 'stock_change', STAMP)
-        self.assertEqual(payload['title'], 'In stock: White · Franklin Park')
+        self.assertEqual(payload['title'], '🚨 DUO IN STOCK: White · Franklin Park')
         self.assertEqual(payload['body'].splitlines()[:2],
-                         ['Franklin Park: White IN, Blue OOS', 'Briarwood: White OOS, Blue OOS'])
+                         ['Franklin Park: White IN STOCK, Blue OOS', 'Briarwood: White OOS, Blue OOS'])
         self.assertNotIn('256', payload['body'])
 
     def test_all_four_combinations_are_explicit_for_every_stock_pattern(self):
@@ -222,11 +222,14 @@ class MonitorTests(unittest.TestCase):
             payload = monitor.notification_payload(inventory, 'heartbeat', STAMP)
             self.assertEqual(len(payload['body'].splitlines()), 3)
             for store in monitor.STORES.values():
-                statuses = [monitor.SHORT_COLORS[color]+' '+('IN' if available else 'OOS')
-                            for color, available in inventory[store].items()]
-                self.assertIn(store+': '+', '.join(statuses), payload['body'].splitlines()[:2])
+                white, blue = inventory[store].values()
+                summary = {(False, False): 'White OOS, Blue OOS',
+                           (True, False): 'White IN STOCK, Blue OOS',
+                           (False, True): 'White OOS, Blue IN STOCK',
+                           (True, True): 'White+Blue IN STOCK'}[(white, blue)]
+                self.assertIn(store+': '+summary, payload['body'].splitlines()[:2])
             self.assertNotIn('256', payload['body'])
-            self.assertTrue(all(len(line) <= 34 for line in payload['body'].splitlines()[:2]))
+            self.assertTrue(all(len(line) <= 40 for line in payload['body'].splitlines()[:2]))
             options = monitor.stock_options(inventory)
             if pattern:
                 self.assertTrue(options[0]['available'])
@@ -237,8 +240,8 @@ class MonitorTests(unittest.TestCase):
         inventory = copy.deepcopy(OUT)
         inventory['Briarwood']['Night Sky 256GB'] = True
         payload = monitor.notification_payload(inventory, 'stock_change', STAMP)
-        self.assertEqual(payload['title'], 'In stock: Blue · Briarwood')
-        self.assertEqual(payload['body'].splitlines()[0], 'Briarwood: White OOS, Blue IN')
+        self.assertEqual(payload['title'], '🚨 DUO IN STOCK: Blue · Briarwood')
+        self.assertEqual(payload['body'].splitlines()[0], 'Briarwood: White OOS, Blue IN STOCK')
 
     def test_legacy_color_names_are_supported_without_losing_stock_status(self):
         inventory = {store: {'White 256GB': False, 'Blue 256GB (verify)': store == 'Briarwood'}
@@ -399,10 +402,10 @@ class MonitorTests(unittest.TestCase):
 
     def test_test_push_clearly_identifies_product_and_both_stores(self):
         payload = monitor.notification_payload(TEST_IN, 'initial_status', STAMP, True)
-        self.assertTrue(payload['title'].startswith('TEST 18 Pro · In stock: Burgundy'))
+        self.assertTrue(payload['title'].startswith('TEST 18 Pro · IN STOCK: Burgundy'))
         self.assertIn('MJQ54LL/A', payload['skus'].values())
         for store in monitor.STORES.values():
-            self.assertIn(store+': Burgundy IN', payload['body'])
+            self.assertIn(store+': Burgundy IN STOCK', payload['body'])
         self.assertNotIn('Star White', payload['body'])
         self.assertNotIn('Night Sky', payload['body'])
         self.assertTrue(payload['test_mode'])
@@ -410,6 +413,14 @@ class MonitorTests(unittest.TestCase):
         self.assertEqual(failed['body'].count('?'), 2)
         self.assertEqual(len(payload['body'].splitlines()), 3)
         self.assertNotIn('256', payload['body'])
+
+    def test_attention_marker_only_appears_for_real_duo_stock(self):
+        for reason in ['initial_status', 'stock_change', 'in_stock', 'heartbeat', 'recovered']:
+            self.assertTrue(monitor.notification_payload(IN, reason, STAMP)['title'].startswith('🚨 DUO IN STOCK'))
+        for inventory, reason, test_mode in [(None, 'started', False), (None, 'stopped', False),
+                                             (None, 'error', False), (OUT, 'heartbeat', False),
+                                             (OUT, 'initial_status', False), (TEST_IN, 'in_stock', True)]:
+            self.assertNotIn('🚨', monitor.notification_payload(inventory, reason, STAMP, test_mode)['title'])
 
     def test_stock_window_sends_each_positive_check_and_one_sold_out_update(self):
         sent, _ = self.run_checks(6, [OUT, IN, IN, IN, OUT, OUT])
