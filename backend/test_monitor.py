@@ -521,7 +521,7 @@ class MonitorTests(unittest.TestCase):
                                 ('initial_status', True), ('initial_status', False), ('stopped', False)])
 
     def test_mode_switch_during_request_does_not_send_old_mode_stock_alert(self):
-        clock = FakeClock(1)
+        clock = FakeClock(2)
         sent = []
         def check(test_mode=False):
             if not test_mode:
@@ -759,6 +759,106 @@ class MonitorTests(unittest.TestCase):
         import json
         saved = json.loads(monitor.POLLING_FILE.read_text())
         self.assertEqual(saved['check_interval_seconds'], monitor.state['check_interval_seconds'])
+
+    def test_granular_polling_range_and_atomic_steps(self):
+        client=monitor.app.test_client()
+        headers={'Authorization':'Bearer '+monitor.ADMIN_TOKEN}
+        with patch.object(monitor.requests, 'get') as apple:
+            for interval in range(30,301,15):
+                result=client.post('/api/polling',json={'interval_seconds':interval},headers=headers)
+                self.assertEqual(result.status_code,200)
+                self.assertEqual(result.json['check_interval_seconds'],interval)
+            for invalid in (0,29,31,299,301,315,True,45.0,'75'):
+                self.assertEqual(client.post('/api/polling',json={'interval_seconds':invalid},headers=headers).status_code,400)
+            self.assertEqual(client.post('/api/polling',json={'delta_seconds':15},headers=headers).status_code,400)
+            result=client.post('/api/polling',json={'delta_seconds':-15},headers=headers)
+            self.assertEqual(result.json['check_interval_seconds'],285)
+            client.post('/api/polling',json={'interval_seconds':30},headers=headers)
+            self.assertEqual(client.post('/api/polling',json={'delta_seconds':-15},headers=headers).status_code,400)
+            self.assertEqual(client.post('/api/polling',json={'delta_seconds':30},headers=headers).status_code,400)
+            apple.assert_not_called()
+
+    def test_slower_adjustments_during_cooldown_preserve_the_deadline(self):
+        client=monitor.app.test_client()
+        headers={'Authorization':'Bearer '+monitor.ADMIN_TOKEN}
+        with patch.object(monitor,'utc_now',return_value=STAMP):
+            guard=monitor.begin_cooldown(541)
+            self.assertEqual(client.post('/api/polling',json={'delta_seconds':15},headers=headers).json['check_interval_seconds'],75)
+            self.assertEqual(client.post('/api/polling',json={'delta_seconds':-15},headers=headers).json['check_interval_seconds'],60)
+            self.assertEqual(client.post('/api/polling',json={'delta_seconds':-15},headers=headers).status_code,409)
+            self.assertEqual(monitor.state['cooldown_until'],guard['cooldown_until'])
+
+    def test_failure_only_raises_rates_below_60(self):
+        for interval in (30,45,60,75,120,300):
+            monitor.state.update(check_interval_seconds=interval,polling_fallback=False)
+            clock=FakeClock(1)
+            with patch.object(monitor,'stop_event',clock), \
+                 patch.object(monitor.time,'monotonic',lambda:clock.seconds), \
+                 patch.object(monitor,'utc_now',clock.utc_now), \
+                 patch.object(monitor,'check_inventory',side_effect=requests.Timeout('offline')), \
+                 patch.object(monitor,'send_notification',side_effect=lambda *args:clock.utc_now()), \
+                 redirect_stdout(io.StringIO()):
+                monitor.run_monitor()
+            self.assertEqual(monitor.state['check_interval_seconds'],max(60,interval))
+            self.assertEqual(clock.waits,[max(60,interval)])
+            self.assertEqual(monitor.state['polling_fallback'],interval<60)
+
+    def test_slow_rate_survives_block_recovery_and_backend_reload(self):
+        monitor.state['check_interval_seconds']=90
+        clock=FakeClock(3)
+        response=requests.Response();response.status_code=541
+        with patch.object(monitor,'stop_event',clock), \
+             patch.object(monitor.time,'monotonic',lambda:clock.seconds), \
+             patch.object(monitor,'utc_now',clock.utc_now), \
+             patch.object(monitor,'check_inventory',side_effect=[requests.HTTPError('blocked',response=response),OUT,OUT]), \
+             patch.object(monitor,'send_notification',side_effect=lambda *args:clock.utc_now()), \
+             redirect_stdout(io.StringIO()):
+            monitor.run_monitor()
+        self.assertEqual(clock.waits,[900,90,90])
+        monitor.state['check_interval_seconds']=30
+        monitor.load_polling()
+        self.assertEqual(monitor.state['check_interval_seconds'],90)
+        with patch.object(monitor,'utc_now',return_value=STAMP):
+            monitor.begin_cooldown(541)
+            monitor.state['check_interval_seconds']=30
+            monitor.load_polling();monitor.load_cooldown()
+            self.assertEqual(monitor.state['check_interval_seconds'],90)
+
+    def test_increasing_rate_extends_pending_wait_without_an_early_request(self):
+        monitor.state['check_interval_seconds']=60
+        clock=FakeClock(3);times=[]
+        original_wait=clock.wait
+        def wait(seconds):
+            done=original_wait(seconds)
+            if len(clock.waits)==1:
+                result=monitor.app.test_client().post('/api/polling',json={'delta_seconds':15},
+                    headers={'Authorization':'Bearer '+monitor.ADMIN_TOKEN})
+                self.assertEqual(result.status_code,200)
+            return done
+        def check(test_mode=False):times.append(clock.seconds);return OUT
+        clock.wait=wait
+        with patch.object(monitor,'stop_event',clock), \
+             patch.object(monitor.time,'monotonic',lambda:clock.seconds), \
+             patch.object(monitor,'utc_now',clock.utc_now), \
+             patch.object(monitor,'check_inventory',side_effect=check), \
+             patch.object(monitor,'send_notification',side_effect=lambda *args:clock.utc_now()), \
+             redirect_stdout(io.StringIO()):
+            monitor.run_monitor()
+        self.assertEqual(times,[0,75])
+        self.assertEqual(clock.waits,[60,15,75])
+
+    def test_parallel_plus_steps_do_not_lose_an_increment(self):
+        monitor.state['check_interval_seconds']=60
+        def step(_):
+            return monitor.app.test_client().post('/api/polling',json={'delta_seconds':15},
+                headers={'Authorization':'Bearer '+monitor.ADMIN_TOKEN}).status_code
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            self.assertEqual(list(pool.map(step,range(2))),[200,200])
+        self.assertEqual(monitor.state['check_interval_seconds'],90)
+
+    def test_four_hour_status_stays_four_hours_at_a_75_second_rate(self):
+        sent,_=self.run_checks(193,interval=75)
+        self.assertEqual([(t,reason) for t,reason,_ in sent],[(0,'initial_status'),(14400,'heartbeat')])
 
 
 if __name__ == '__main__':

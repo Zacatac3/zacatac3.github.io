@@ -32,6 +32,9 @@ TEST_SKUS = {'iPhone 18 Pro 256GB Burgundy': 'MJQ54LL/A'}
 LEGACY_COLORS = {'White 256GB': 'Star White 256GB', 'Blue 256GB (verify)': 'Night Sky 256GB'}
 STORES = {'R299': 'Franklin Park', 'R230': 'Briarwood'}
 CHECK_INTERVAL_SECONDS = 30
+POLLING_MIN_SECONDS = 30
+POLLING_MAX_SECONDS = 300
+POLLING_STEP_SECONDS = 15
 STATUS_INTERVAL_SECONDS = 4 * 60 * 60
 EASTERN = ZoneInfo('America/New_York')
 HISTORY_LIMIT = 1440
@@ -66,6 +69,9 @@ def polling_info(snapshot=None):
             snapshot = dict(state)
     return {key: snapshot[key] for key in ('check_interval_seconds', 'polling_fallback', 'polling_persistence_error')}
 
+def valid_polling_interval(value):
+    return type(value) is int and POLLING_MIN_SECONDS <= value <= POLLING_MAX_SECONDS and value % POLLING_STEP_SECONDS == 0
+
 def persist_polling():
     with polling_save_lock:
         return save_polling_snapshot()
@@ -90,7 +96,7 @@ def load_polling():
         return
     try:
         data = json.loads(POLLING_FILE.read_text())
-        if type(data['check_interval_seconds']) is not int or data['check_interval_seconds'] not in (30, 60) or type(data['polling_fallback']) is not bool:
+        if not valid_polling_interval(data['check_interval_seconds']) or type(data['polling_fallback']) is not bool:
             raise ValueError('Invalid saved polling rate')
         with lock:
             state.update(check_interval_seconds=data['check_interval_seconds'], polling_fallback=data['polling_fallback'])
@@ -142,8 +148,10 @@ def begin_cooldown(status_code, retry_after=None):
     data = {'cooldown_until': (now + timedelta(seconds=seconds)).isoformat(timespec='milliseconds'),
             'cooldown_attempts': attempt + 1, 'cooldown_status': status_code}
     with lock:
-        state.update(**data, cooldown_persistence_error=None, check_interval_seconds=60,
-                     polling_fallback=True, polling_persistence_error=None)
+        fallback = state['check_interval_seconds'] < 60
+        state.update(**data, cooldown_persistence_error=None,
+                     check_interval_seconds=max(60, state['check_interval_seconds']),
+                     polling_fallback=state['polling_fallback'] or fallback, polling_persistence_error=None)
         if check_history:
             check_history[-1] = {**check_history[-1], 'cooldown_until': data['cooldown_until']}
     persist_cooldown(data)
@@ -172,7 +180,9 @@ def load_cooldown():
             raise ValueError('Invalid cooldown data')
         with lock:
             state.update({key: data[key] for key in ('cooldown_until', 'cooldown_attempts', 'cooldown_status')})
-            state.update(check_interval_seconds=60, polling_fallback=True)
+            fallback = state['check_interval_seconds'] < 60
+            state.update(check_interval_seconds=max(60, state['check_interval_seconds']),
+                         polling_fallback=state['polling_fallback'] or fallback)
     except (OSError, ValueError, KeyError, TypeError):
         # A corrupt saved block must not silently permit immediate retries.
         begin_cooldown(541)
@@ -249,16 +259,22 @@ def recent_activity():
 @app.post('/api/polling')
 def set_polling():
     data = request.get_json(silent=True)
-    if not isinstance(data, dict) or type(data.get('interval_seconds')) is not int or data['interval_seconds'] not in (30, 60):
-        return jsonify(error='interval_seconds must be 30 or 60'), 400
+    if not isinstance(data, dict) or ('interval_seconds' in data) == ('delta_seconds' in data):
+        return jsonify(error='Provide interval_seconds or delta_seconds'), 400
+    if 'delta_seconds' in data and (type(data['delta_seconds']) is not int or data['delta_seconds'] not in (-15, 15)):
+        return jsonify(error='delta_seconds must be -15 or 15'), 400
     with lock:
-        if state['cooldown_attempts']:
-            return jsonify(error='Wait for a successful cooldown recovery check before changing the polling rate.',
+        interval = state['check_interval_seconds'] + data['delta_seconds'] if 'delta_seconds' in data else data['interval_seconds']
+        if not valid_polling_interval(interval):
+            return jsonify(error='Polling must be 30–300 seconds in 15-second increments'), 400
+        if state['cooldown_attempts'] and interval < 60:
+            return jsonify(error='Wait for a successful cooldown recovery check before selecting a rate below 60 seconds.',
                            **polling_info(dict(state)), **cooldown_info(dict(state))), 409
-        state.update(check_interval_seconds=data['interval_seconds'], polling_fallback=False,
+        state.update(check_interval_seconds=interval, polling_fallback=False,
                      polling_persistence_error=None)
     persist_polling()
-    return jsonify(ok=True, **polling_info(), message='The selected rate applies after the next scheduled check.')
+    return jsonify(ok=True, **polling_info(), **cooldown_info(),
+                   message='Rate saved for upcoming scheduled checks; no extra inventory check was triggered.')
 
 @app.post('/api/mode')
 def set_mode():
@@ -476,6 +492,7 @@ def run_monitor():
     index = 0
     last_mode = None
     last_revision = None
+    last_request_started = None
     try:
         with lock:
             test_mode = state['test_mode']
@@ -489,6 +506,11 @@ def run_monitor():
                 test_mode = state['test_mode']
                 revision = state['mode_revision']
                 interval = state['check_interval_seconds']
+            if last_request_started is not None:
+                wait_remaining = last_request_started + interval - time.monotonic()
+                if wait_remaining > 0:
+                    if stop_event.wait(wait_remaining): break
+                    continue
             if last_mode != test_mode or last_revision != revision:
                 last_notified_inventory = None
                 inventory_failed = False
@@ -498,6 +520,7 @@ def run_monitor():
                 last_revision = revision
             index += 1
             check_started = time.monotonic()
+            last_request_started = check_started
             next_check = check_started + interval
             inventory = None
             error = None
@@ -506,6 +529,13 @@ def run_monitor():
                 inventory = check_inventory(test_mode)
             except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
                 error = f'{type(exc).__name__}: {exc}'
+                with lock:
+                    fallback = state['check_interval_seconds'] < 60
+                    if fallback:
+                        state.update(check_interval_seconds=60, polling_fallback=True, polling_persistence_error=None)
+                if fallback:
+                    persist_polling()
+                    next_check = check_started + 60
                 response = getattr(exc, 'response', None)
                 with lock:
                     previous_block = state['cooldown_status'] if state['cooldown_attempts'] else None
@@ -517,7 +547,7 @@ def run_monitor():
             else:
                 if state['cooldown_attempts']:
                     clear_cooldown()
-                    next_check = check_started + 60
+                    next_check = check_started + polling_info()['check_interval_seconds']
             checked_at = utc_now()
             if stop_event.is_set(): break
             with lock:
