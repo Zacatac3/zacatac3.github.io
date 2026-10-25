@@ -8,7 +8,12 @@ The iPhone Home Screen app does not need to remain open or in memory. Its saved
 push subscription is used by the Mac backend independently. This is a local Mac
 service; monitoring must be started again after restarting the backend or Mac.
 
-- Checks Franklin Park and Briarwood every 30 seconds until stopped.
+- Checks Franklin Park and Briarwood every 30 seconds initially. Any block
+  selects a 60-second fallback for after recovery. The PWA's **Use 30-second
+  polling** button restores 30 seconds once a recovery check succeeds. It
+  does not make an immediate extra check or bypass a cooldown, and its setting
+  applies after the next scheduled check. Another block selects 60 seconds again.
+  The selected rate and fallback state persist in ignored `backend/polling.json`.
 - Sends a dedicated push when monitoring starts and when it finishes stopping.
   Stopping waits for any active request to finish; repeated stop requests do
   not send duplicate stop pushes. Push delivery failures appear in backend
@@ -17,7 +22,7 @@ service; monitoring must be started again after restarting the backend or Mac.
   check while any monitored variant is in stock, even if availability is unchanged.
   Also sends stock-change alerts, including when the last available option sells
   out. This applies in both Duo and test mode. Repeated in-stock pushes do not
-  postpone the four-hour status schedule. The 30-second samples and request log
+  postpone the four-hour status schedule. The 30- or 60-second samples and request log
   show the observed availability window, rather than its exact start/end seconds.
 - Stock notifications show one compact line per store, followed by the Eastern
   timestamp: `Franklin Park: White IN STOCK, Blue OOS`. Both available colors
@@ -36,14 +41,14 @@ service; monitoring must be started again after restarting the backend or Mac.
   duration and actual acceptance time. Acceptance means the push service
   accepted the request, not that the phone displayed it. Older log timestamps
   marked `Push sent` were taken before submission completed and do not measure
-  phone delivery latency. The polling interval is 30 seconds, which can
-  add up to 30 seconds of detection delay before push delivery begins.
+  phone delivery latency. The polling interval is 30 or 60 seconds, which can
+  add up to that interval of detection delay before push delivery begins.
 - HTTP 541, 403, and 429 trigger a quiet period with no Apple inventory requests:
   15 minutes after the first blocked response, then 30 minutes and 60 minutes
   after subsequent failed recovery probes, including timeouts or invalid
   responses that do not prove recovery. Longer `Retry-After` values are
   respected. Only one check is made after each quiet period. A successful check
-  clears the backoff and restores 30-second polling with a recovery push.
+  clears the backoff and resumes 60-second polling with a recovery push.
 - Cooldown deadlines and consecutive block counts are saved in the ignored
   `backend/cooldown.json`. Stop/start, test-mode changes, and backend restarts
   cannot reset or bypass the wait. Stopping interrupts the wait immediately,
@@ -54,7 +59,7 @@ service; monitoring must be started again after restarting the backend or Mac.
   push per blocked attempt; it does not make inventory requests just to refresh
   the page. The timing policy is conservative: Apple's exact first-versus-last
   request block expiry is not known or guaranteed.
-- Other failed checks remain unknown, normally retry every 30 seconds, and send a
+- Other failed checks remain unknown, normally retry at the selected rate, and send a
   recovery notification when inventory checks work again.
 - Notification bodies and website activity times use `America/New_York` to
   show Eastern Time to the second: EDT during daylight saving time and EST
@@ -63,7 +68,7 @@ service; monitoring must be started again after restarting the backend or Mac.
   visible. It records actual Apple requests on the backend while the page is
   closed, including failures, HTTP status, duration, stock results, and gaps
   between requests. Refreshing the page log never triggers an Apple request.
-- Only the latest 1,440 requests (about 12 hours at the current rate) are retained in memory. The
+- Only the latest 1,440 requests (about 12–24 hours at the selected rate) are retained in memory. The
   website can show the latest 120, 360, or 1,440. History survives stopping and
   starting monitoring but clears when the backend process restarts. The log
   starts with this update; earlier requests are not reconstructed.
@@ -77,7 +82,7 @@ configuration is in `monitor.py`.
 
 The **Test with iPhone 18 Pro** switch replaces the Duo request with SKU
 `MJQ54LL/A` (iPhone 18 Pro 256GB Burgundy), at the same two stores. While
-monitoring is running, the next scheduled check (within 30 seconds) sends a
+monitoring is running, the next scheduled check (at the selected polling rate) sends a
 fresh status push for the selected mode even if stock has not changed. Test
 notifications say `TEST`, and each history entry keeps its own mode label.
 Turning the switch off restores both Duo colors. This switch affects the Mac

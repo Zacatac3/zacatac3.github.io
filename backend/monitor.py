@@ -22,6 +22,7 @@ SUB_FILE = BASE / 'subscription.json'
 KEY_FILE = BASE / 'private_key.pem'
 TOKEN_FILE = BASE / 'admin_token.txt'
 COOLDOWN_FILE = BASE / 'cooldown.json'
+POLLING_FILE = BASE / 'polling.json'
 # Set this to your exact GitHub Pages origin if using a custom domain.
 ALLOWED_ORIGIN = os.environ.get('DUO_ALLOWED_ORIGIN', 'https://zacatac3.github.io').rstrip('/')
 VAPID_SUBJECT = os.environ.get('DUO_VAPID_SUBJECT', 'https://zacatac3.github.io')
@@ -45,7 +46,8 @@ state = {'running': False, 'completed': 0, 'last_check': None, 'last_error': Non
          'next_status_at': None, 'last_notification_error': None, 'stopped_at': None,
          'test_mode': False, 'mode_revision': 0, 'last_push': None,
          'cooldown_until': None, 'cooldown_attempts': 0, 'cooldown_status': None,
-         'cooldown_persistence_error': None}
+         'cooldown_persistence_error': None, 'check_interval_seconds': CHECK_INTERVAL_SECONDS,
+         'polling_fallback': False, 'polling_persistence_error': None}
 stop_event = threading.Event()
 check_history = deque(maxlen=HISTORY_LIMIT)
 activity = {'in_flight': None}
@@ -56,6 +58,41 @@ def utc_now():
 def mode_details(test_mode):
     return {'test_mode': test_mode, 'mode_label': 'iPhone 18 Pro test' if test_mode else 'Duo',
             'skus': TEST_SKUS if test_mode else SKUS}
+
+def polling_info(snapshot=None):
+    if snapshot is None:
+        with lock:
+            snapshot = dict(state)
+    return {key: snapshot[key] for key in ('check_interval_seconds', 'polling_fallback', 'polling_persistence_error')}
+
+def persist_polling():
+    data = polling_info()
+    temporary = POLLING_FILE.with_suffix('.tmp')
+    try:
+        with open(temporary, 'w') as handle:
+            os.chmod(temporary, 0o600)
+            json.dump(data, handle)
+        temporary.replace(POLLING_FILE)
+        return True
+    except OSError as exc:
+        with lock:
+            state['polling_persistence_error'] = str(exc)
+        print('Could not persist polling rate:', type(exc).__name__, flush=True)
+        return False
+
+def load_polling():
+    if not POLLING_FILE.exists():
+        return
+    try:
+        data = json.loads(POLLING_FILE.read_text())
+        if type(data['check_interval_seconds']) is not int or data['check_interval_seconds'] not in (30, 60) or type(data['polling_fallback']) is not bool:
+            raise ValueError('Invalid saved polling rate')
+        with lock:
+            state.update(check_interval_seconds=data['check_interval_seconds'], polling_fallback=data['polling_fallback'])
+    except (OSError, ValueError, KeyError, TypeError):
+        with lock:
+            state.update(check_interval_seconds=60, polling_fallback=True,
+                         polling_persistence_error='Saved polling rate could not be loaded; using 60 seconds.')
 
 def cooldown_info(snapshot=None):
     if snapshot is None:
@@ -100,16 +137,20 @@ def begin_cooldown(status_code, retry_after=None):
     data = {'cooldown_until': (now + timedelta(seconds=seconds)).isoformat(timespec='milliseconds'),
             'cooldown_attempts': attempt + 1, 'cooldown_status': status_code}
     with lock:
-        state.update(**data, cooldown_persistence_error=None)
+        state.update(**data, cooldown_persistence_error=None, check_interval_seconds=60,
+                     polling_fallback=True, polling_persistence_error=None)
         if check_history:
             check_history[-1] = {**check_history[-1], 'cooldown_until': data['cooldown_until']}
     persist_cooldown(data)
+    persist_polling()
     return cooldown_info()
 
 def clear_cooldown():
     with lock:
         state.update(cooldown_until=None, cooldown_attempts=0, cooldown_status=None,
                      cooldown_persistence_error=None)
+    if not persist_polling():
+        return
     try:
         COOLDOWN_FILE.unlink(missing_ok=True)
     except OSError as exc:
@@ -126,10 +167,12 @@ def load_cooldown():
             raise ValueError('Invalid cooldown data')
         with lock:
             state.update({key: data[key] for key in ('cooldown_until', 'cooldown_attempts', 'cooldown_status')})
+            state.update(check_interval_seconds=60, polling_fallback=True)
     except (OSError, ValueError, KeyError, TypeError):
         # A corrupt saved block must not silently permit immediate retries.
         begin_cooldown(541)
 
+load_polling()
 load_cooldown()
 
 def get_token():
@@ -171,8 +214,8 @@ def subscribe():
 def status():
     with lock: result = dict(state)
     result['subscribed'] = SUB_FILE.exists()
-    result.update(check_interval_seconds=CHECK_INTERVAL_SECONDS,
-                  status_interval_seconds=STATUS_INTERVAL_SECONDS)
+    result.update(status_interval_seconds=STATUS_INTERVAL_SECONDS)
+    result.update(polling_info(result))
     result.update(mode_details(result['test_mode']))
     result.update(cooldown_info(result))
     return jsonify(result)
@@ -192,10 +235,25 @@ def recent_activity():
                   'failure_count': sum(not row['ok'] for row in retained),
                   'in_flight': activity['in_flight'], 'running': state['running'],
                   'started_at': state['started_at'], 'last_push': state['last_push'],
+                  **polling_info(dict(state)),
                   **cooldown_info(dict(state)),
                   **mode_details(state['test_mode'])}
-    result.update(server_time=utc_now(), check_interval_seconds=CHECK_INTERVAL_SECONDS)
+    result.update(server_time=utc_now())
     return jsonify(result)
+
+@app.post('/api/polling')
+def set_polling():
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or type(data.get('interval_seconds')) is not int or data['interval_seconds'] not in (30, 60):
+        return jsonify(error='interval_seconds must be 30 or 60'), 400
+    with lock:
+        if state['cooldown_attempts']:
+            return jsonify(error='Wait for a successful cooldown recovery check before changing the polling rate.',
+                           **polling_info(dict(state)), **cooldown_info(dict(state))), 409
+        state.update(check_interval_seconds=data['interval_seconds'], polling_fallback=False,
+                     polling_persistence_error=None)
+    persist_polling()
+    return jsonify(ok=True, **polling_info(), message='The selected rate applies after the next scheduled check.')
 
 @app.post('/api/mode')
 def set_mode():
@@ -224,7 +282,7 @@ def start():
                      last_notification_error=None, stopped_at=None)
         stop_event.clear()
     threading.Thread(target=run_monitor, daemon=True).start()
-    return jsonify(ok=True, continuous=True, interval_seconds=CHECK_INTERVAL_SECONDS,
+    return jsonify(ok=True, continuous=True, interval_seconds=polling_info()['check_interval_seconds'],
                    status_interval_seconds=STATUS_INTERVAL_SECONDS, **cooldown_info())
 
 @app.post('/api/stop')
@@ -425,6 +483,7 @@ def run_monitor():
             with lock:
                 test_mode = state['test_mode']
                 revision = state['mode_revision']
+                interval = state['check_interval_seconds']
             if last_mode != test_mode or last_revision != revision:
                 last_notified_inventory = None
                 inventory_failed = False
@@ -433,7 +492,8 @@ def run_monitor():
                 last_mode = test_mode
                 last_revision = revision
             index += 1
-            next_check = time.monotonic() + CHECK_INTERVAL_SECONDS
+            check_started = time.monotonic()
+            next_check = check_started + interval
             inventory = None
             error = None
             cooldown_started = False
@@ -452,6 +512,7 @@ def run_monitor():
             else:
                 if state['cooldown_attempts']:
                     clear_cooldown()
+                    next_check = check_started + 60
             checked_at = utc_now()
             if stop_event.is_set(): break
             with lock:

@@ -48,8 +48,11 @@ class MonitorTests(unittest.TestCase):
         self.cooldown_directory = tempfile.TemporaryDirectory()
         self.cooldown_file_patch = patch.object(monitor, 'COOLDOWN_FILE', Path(self.cooldown_directory.name) / 'cooldown.json')
         self.cooldown_file_patch.start()
+        self.polling_file_patch = patch.object(monitor, 'POLLING_FILE', Path(self.cooldown_directory.name) / 'polling.json')
+        self.polling_file_patch.start()
         monitor.state.update(cooldown_until=None, cooldown_attempts=0, cooldown_status=None,
-                             cooldown_persistence_error=None)
+                             cooldown_persistence_error=None, check_interval_seconds=30,
+                             polling_fallback=False, polling_persistence_error=None)
         monitor.check_history.clear()
         monitor.activity['in_flight'] = None
 
@@ -60,6 +63,7 @@ class MonitorTests(unittest.TestCase):
         monitor.check_history.extend(self.original_history)
         monitor.activity.update(self.original_activity)
         self.cooldown_file_patch.stop()
+        self.polling_file_patch.stop()
         self.cooldown_directory.cleanup()
 
     def run_checks(self, checks, inventory=OUT, send_failure=None, include_lifecycle=False,
@@ -79,6 +83,7 @@ class MonitorTests(unittest.TestCase):
 
         check = Mock(side_effect=inventory) if isinstance(inventory, list) else Mock(return_value=inventory)
         monitor.state['running'] = True
+        monitor.state['check_interval_seconds'] = interval
         with patch.object(monitor, 'stop_event', clock), \
              patch.object(monitor, 'CHECK_INTERVAL_SECONDS', interval), \
              patch.object(monitor.time, 'monotonic', lambda: clock.seconds), \
@@ -594,10 +599,10 @@ class MonitorTests(unittest.TestCase):
              patch.object(monitor, 'check_inventory', side_effect=check), \
              patch.object(monitor, 'send_notification', send), redirect_stdout(io.StringIO()):
             monitor.run_monitor()
-        self.assertEqual(times, [0, 900, 2700, 2730])
-        self.assertEqual(clock.waits, [900, 1800, 30, 30])
+        self.assertEqual(times, [0, 900, 2700, 2760])
+        self.assertEqual(clock.waits, [900, 1800, 60, 60])
         self.assertEqual([row for row in sent if row[1] not in ('started', 'stopped')],
-                         [(0, 'cooldown'), (900, 'cooldown'), (2700, 'recovered'), (2730, 'in_stock')])
+                         [(0, 'cooldown'), (900, 'cooldown'), (2700, 'recovered'), (2760, 'in_stock')])
         self.assertEqual(monitor.state['cooldown_attempts'], 0)
 
     def test_stop_interrupts_cooldown_without_querying_apple_or_clearing_guard(self):
@@ -628,7 +633,7 @@ class MonitorTests(unittest.TestCase):
              patch.object(monitor, 'send_notification', side_effect=lambda *args: clock.utc_now()), \
              redirect_stdout(io.StringIO()):
             monitor.run_monitor()
-        self.assertEqual(clock.waits, [900, 1800, 30, 30])
+        self.assertEqual(clock.waits, [900, 1800, 60, 60])
         self.assertEqual(check.call_count, 4)
         self.assertEqual(monitor.state['cooldown_attempts'], 0)
 
@@ -668,6 +673,79 @@ class MonitorTests(unittest.TestCase):
         sent, _ = self.run_checks(4, IN, interval=30)
         self.assertEqual([(t, reason) for t, reason, _ in sent],
                          [(0, 'initial_status'), (30, 'in_stock'), (60, 'in_stock'), (90, 'in_stock')])
+
+    def test_cooldown_fallback_is_60_seconds_and_persists_after_recovery(self):
+        with patch.object(monitor, 'utc_now', return_value=STAMP):
+            monitor.begin_cooldown(541)
+            self.assertEqual(monitor.state['check_interval_seconds'], 60)
+            self.assertTrue(monitor.state['polling_fallback'])
+            monitor.clear_cooldown()
+            self.assertEqual(monitor.state['check_interval_seconds'], 60)
+            monitor.state.update(check_interval_seconds=30, polling_fallback=False)
+            monitor.load_polling()
+            self.assertEqual(monitor.state['check_interval_seconds'], 60)
+            self.assertTrue(monitor.state['polling_fallback'])
+
+    def test_fast_override_requires_healthy_recovery_and_preserves_cooldown(self):
+        client = monitor.app.test_client()
+        headers = {'Authorization': 'Bearer '+monitor.ADMIN_TOKEN}
+        self.assertEqual(client.post('/api/polling', json={'interval_seconds':30}).status_code, 401)
+        for invalid in (15, True, '30', 30.0):
+            self.assertEqual(client.post('/api/polling', json={'interval_seconds':invalid}, headers=headers).status_code, 400)
+        with patch.object(monitor, 'utc_now', return_value=STAMP), patch.object(monitor.requests, 'get') as apple:
+            guard = monitor.begin_cooldown(541)
+            response = client.post('/api/polling', json={'interval_seconds':30}, headers=headers)
+            self.assertEqual(response.status_code, 409)
+            self.assertEqual(monitor.state['cooldown_until'], guard['cooldown_until'])
+            with patch.object(monitor, 'utc_now', return_value='2026-10-25T00:00:00+00:00'):
+                self.assertEqual(client.post('/api/polling', json={'interval_seconds':30}, headers=headers).status_code, 409)
+            monitor.clear_cooldown()
+            response = client.post('/api/polling', json={'interval_seconds':30}, headers=headers)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json['check_interval_seconds'], 30)
+            self.assertFalse(response.json['polling_fallback'])
+            monitor.state.update(check_interval_seconds=60, polling_fallback=True)
+            monitor.load_polling()
+            self.assertEqual(monitor.state['check_interval_seconds'], 30)
+            monitor.begin_cooldown(541)
+            self.assertEqual(monitor.state['check_interval_seconds'], 60)
+            apple.assert_not_called()
+
+    def test_fallback_then_pwa_override_changes_future_check_cadence(self):
+        clock = FakeClock(4)
+        response = requests.Response()
+        response.status_code = 541
+        times = []
+        def check(test_mode=False):
+            times.append(clock.seconds)
+            if len(times) == 1:
+                raise requests.HTTPError('blocked', response=response)
+            return IN
+        original_wait = clock.wait
+        def wait(seconds):
+            done = original_wait(seconds)
+            if len(clock.waits) == 2:
+                result = monitor.app.test_client().post('/api/polling', json={'interval_seconds':30},
+                    headers={'Authorization':'Bearer '+monitor.ADMIN_TOKEN})
+                self.assertEqual(result.status_code, 200)
+            return done
+        clock.wait = wait
+        with patch.object(monitor, 'stop_event', clock), \
+             patch.object(monitor.time, 'monotonic', lambda: clock.seconds), \
+             patch.object(monitor, 'utc_now', clock.utc_now), \
+             patch.object(monitor, 'check_inventory', side_effect=check), \
+             patch.object(monitor, 'send_notification', side_effect=lambda *args: clock.utc_now()), \
+             redirect_stdout(io.StringIO()):
+            monitor.run_monitor()
+        self.assertEqual(times, [0, 900, 960, 990])
+        self.assertEqual(clock.waits, [900, 60, 30, 30])
+
+    def test_activity_exposes_the_selected_rate_and_fallback(self):
+        monitor.state.update(check_interval_seconds=60, polling_fallback=True)
+        data=monitor.app.test_client().get('/api/activity', headers={
+            'Authorization':'Bearer '+monitor.ADMIN_TOKEN}).json
+        self.assertEqual(data['check_interval_seconds'], 60)
+        self.assertTrue(data['polling_fallback'])
 
 
 if __name__ == '__main__':

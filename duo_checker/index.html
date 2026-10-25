@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#111827"><link rel="manifest" href="./manifest.json"><title>Duo Stock Monitor</title>
-<style>body{font:16px system-ui;background:#111827;color:#f9fafb;max-width:620px;margin:35px auto;padding:0 18px}input,button,select{font:inherit;padding:12px;margin:5px 0;width:100%;box-sizing:border-box;border-radius:8px}button{background:#60a5fa;color:#111827;border:0;font-weight:700;cursor:pointer}input,select{background:#1f2937;color:white;border:1px solid #64748b}pre{white-space:pre-wrap;overflow-wrap:anywhere}small,.muted{color:#cbd5e1}h2{font-size:1.3rem;margin:0}section{margin:26px 0;padding-top:22px;border-top:1px solid #374151}.activity-header{display:flex;align-items:center;justify-content:space-between;gap:12px}.badge{font-size:.8rem;font-weight:700;white-space:nowrap;border-radius:20px;padding:5px 10px;background:#374151;color:#e5e7eb}.good{background:#064e3b;color:#a7f3d0}.bad{background:#7f1d1d;color:#fecaca}.warning{background:#78350f;color:#fde68a}.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}.stat{padding:14px;background:#1f2937;border-radius:10px}.stat small{display:block;margin-bottom:6px}.stat strong{font-size:1.05rem}.toolbar{display:flex;gap:10px;align-items:end}.toolbar label{flex:1}.toolbar button{width:auto}.activity-log{list-style:none;padding:0;margin:14px 0;max-height:540px;overflow:auto;border:1px solid #374151;border-radius:10px}.activity-log li{padding:14px;border-bottom:1px solid #374151}.activity-log li:last-child{border:0}.entry-heading{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center}.entry-heading time{font-size:.9rem;font-variant-numeric:tabular-nums}.entry-meta,.entry-result{font-size:.87rem;line-height:1.5;margin:7px 0 0;overflow-wrap:anywhere}details{margin:18px 0}summary{cursor:pointer;color:#cbd5e1}#activityMessage{font-size:.9rem;line-height:1.5}button:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid #f9fafb;outline-offset:3px}.stock-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px}.stock-cell{display:flex;flex-direction:column;gap:3px;padding:10px;border-radius:8px;background:#1f2937}.stock-cell.good{background:#064e3b}.stock-cell span{font-weight:600}.stock-cell small{font-size:.78rem}.stock-cell strong{font-size:.85rem}.stock-callout{padding:9px;border-radius:8px;margin:7px 0;font-weight:600}.test-controls{padding:14px;margin:12px 0;border:1px solid #64748b;border-radius:10px}.test-controls p{font-size:.86rem;line-height:1.5;margin:10px 0 0}.test-toggle{display:flex;align-items:center;gap:12px;font-weight:700}.test-toggle input{width:24px;height:24px;flex:none;margin:0;padding:0;accent-color:#fbbf24}.test-toggle input:disabled{opacity:.5}.secondary{background:transparent;color:#cbd5e1;border:1px solid #64748b}#connectionStorage{font-size:.85rem;line-height:1.5}</style></head><body>
-<h1>Duo Stock Monitor</h1><p>Checks stock every 30 seconds and sends a notification on every check while anything is in stock. Availability changes trigger alerts too, plus a status check every 4 hours when everything stays out of stock.</p>
-<p><small>If Apple blocks inventory requests, checks pause for 15 minutes. A blocked recovery probe waits 30 minutes, then 60 minutes. Normal 30-second polling resumes after a successful check.</small></p>
+<style>body{font:16px system-ui;background:#111827;color:#f9fafb;max-width:620px;margin:35px auto;padding:0 18px}input,button,select{font:inherit;padding:12px;margin:5px 0;width:100%;box-sizing:border-box;border-radius:8px}button{background:#60a5fa;color:#111827;border:0;font-weight:700;cursor:pointer}input,select{background:#1f2937;color:white;border:1px solid #64748b}pre{white-space:pre-wrap;overflow-wrap:anywhere}small,.muted{color:#cbd5e1}h2{font-size:1.3rem;margin:0}section{margin:26px 0;padding-top:22px;border-top:1px solid #374151}.activity-header{display:flex;align-items:center;justify-content:space-between;gap:12px}.badge{font-size:.8rem;font-weight:700;white-space:nowrap;border-radius:20px;padding:5px 10px;background:#374151;color:#e5e7eb}.good{background:#064e3b;color:#a7f3d0}.bad{background:#7f1d1d;color:#fecaca}.warning{background:#78350f;color:#fde68a}.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}.stat{padding:14px;background:#1f2937;border-radius:10px}.stat small{display:block;margin-bottom:6px}.stat strong{font-size:1.05rem}.toolbar{display:flex;gap:10px;align-items:end}.toolbar label{flex:1}.toolbar button{width:auto}.activity-log{list-style:none;padding:0;margin:14px 0;max-height:540px;overflow:auto;border:1px solid #374151;border-radius:10px}.activity-log li{padding:14px;border-bottom:1px solid #374151}.activity-log li:last-child{border:0}.entry-heading{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center}.entry-heading time{font-size:.9rem;font-variant-numeric:tabular-nums}.entry-meta,.entry-result{font-size:.87rem;line-height:1.5;margin:7px 0 0;overflow-wrap:anywhere}details{margin:18px 0}summary{cursor:pointer;color:#cbd5e1}#activityMessage{font-size:.9rem;line-height:1.5}button:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid #f9fafb;outline-offset:3px}.stock-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px}.stock-cell{display:flex;flex-direction:column;gap:3px;padding:10px;border-radius:8px;background:#1f2937}.stock-cell.good{background:#064e3b}.stock-cell span{font-weight:600}.stock-cell small{font-size:.78rem}.stock-cell strong{font-size:.85rem}.stock-callout{padding:9px;border-radius:8px;margin:7px 0;font-weight:600}.test-controls{padding:14px;margin:12px 0;border:1px solid #64748b;border-radius:10px}.test-controls p{font-size:.86rem;line-height:1.5;margin:10px 0 0}.test-toggle{display:flex;align-items:center;gap:12px;font-weight:700}.test-toggle input{width:24px;height:24px;flex:none;margin:0;padding:0;accent-color:#fbbf24}.test-toggle input:disabled{opacity:.5}.secondary{background:transparent;color:#cbd5e1;border:1px solid #64748b}#connectionStorage{font-size:.85rem;line-height:1.5}button:disabled{opacity:.5;cursor:default}</style></head><body>
+<h1>Duo Stock Monitor</h1><p>Checks stock at the selected 30- or 60-second rate and sends a notification on every check while anything is in stock. Availability changes trigger alerts too, plus a status check every 4 hours when everything stays out of stock.</p>
+<p><small>If Apple blocks inventory requests, checks pause for 15 minutes. A failed recovery probe waits 30 minutes, then 60 minutes. Successful recovery resumes at the safer 60-second rate; you can choose 30 seconds again below.</small></p>
 <p><small>Push summaries use White / Blue and IN STOCK / OOS, with one line per store and an Eastern timestamp to the second. Real Duo stock alerts start with 🚨 DUO IN STOCK. Each in-stock check creates a separate notification; the log keeps every request.</small></p>
 <p><small>Times use Eastern Time (EDT/EST), to the second, and adjust automatically for daylight saving time. Keep your Mac awake with the backend and HTTPS tunnel running. Open this app from your iPhone Home Screen.</small></p>
 <p><small>You can close this iPhone app; monitoring and push delivery continue independently on your Mac. Monitored variants: Star White 256GB and Night Sky 256GB, at Franklin Park and Briarwood.</small></p>
@@ -14,9 +14,11 @@
 <button id="connect">Connect and subscribe this iPhone</button>
 <div class="test-controls">
  <label class="test-toggle"><input id="testMode" type="checkbox" role="switch" disabled>Test with iPhone 18 Pro</label>
- <p class="muted">Uses Burgundy 256GB, SKU MJQ54LL/A, at both stores instead of the Duo colors. Switching modes sends a fresh status on the next permitted check, normally within 30 seconds. It does not bypass an Apple cooldown.</p>
+ <p class="muted">Uses Burgundy 256GB, SKU MJQ54LL/A, at both stores instead of the Duo colors. Switching modes sends a fresh status on the next permitted check at the selected polling rate. It does not bypass an Apple cooldown.</p>
  <p id="modeStatus" role="status">Refresh the log or check backend status to load the current mode.</p>
 </div>
+<p id="pollingStatus" class="muted" role="status">Connect to load the current polling rate.</p>
+<button id="fastPolling" disabled>Use 30-second polling</button>
 <button id="start">Start monitoring</button>
 <button id="statusButton">Check backend status</button>
 <button id="stop">Stop monitoring</button>
@@ -24,14 +26,14 @@
 <section aria-labelledby="activityTitle">
  <div class="activity-header"><h2 id="activityTitle">Apple request activity</h2><span id="activityState" class="badge" role="status">Not connected</span></div>
  <p id="cooldownMessage" class="muted" role="status" hidden></p>
- <p class="muted">Each scheduled stock request appears here, even while this page is closed. The latest 1,440 checks are kept in memory (about 12 hours at the current rate); the log resets when the backend restarts.</p>
+ <p class="muted" id="retentionNote">Each scheduled stock request appears here, even while this page is closed. The latest 1,440 checks are kept in memory (about 12–24 hours depending on the rate); the log resets when the backend restarts.</p>
  <div class="stats">
   <div class="stat"><small>Monitoring session</small><strong id="sessionAge">—</strong></div>
   <div class="stat"><small>Last Apple request</small><strong id="lastRequestAge">—</strong></div>
   <div class="stat"><small>Successful checks retained</small><strong id="successCount">—</strong></div>
   <div class="stat"><small>Failed checks retained</small><strong id="failureCount">—</strong></div>
  </div>
- <div class="toolbar"><label>Show recent checks<select id="historyLimit"><option value="120">Latest 120 (~1 hour)</option><option value="360">Latest 360 (~3 hours)</option><option value="1440">Latest 1,440 (~12 hours)</option></select></label><button id="refreshActivity">Refresh log</button></div>
+ <div class="toolbar"><label>Show recent checks<select id="historyLimit"><option id="limit120" value="120">Latest 120</option><option id="limit360" value="360">Latest 360</option><option id="limit1440" value="1440">Latest 1,440</option></select></label><button id="refreshActivity">Refresh log</button></div>
  <p id="activityMessage" role="status">Enter your tunnel URL and token, then tap Refresh log. Refreshing the log does not send an extra request to Apple.</p>
  <p id="pushTiming" class="muted" role="status">Push timing will appear after the backend sends a notification.</p>
  <ol id="activityLog" class="activity-log" aria-label="Recent Apple requests, newest first"><li>No checks loaded yet.</li></ol>
@@ -83,7 +85,7 @@ async function api(path, method='GET', body){
 }
 function publicKeyBytes(key){const b64=key.replace(/-/g,'+').replace(/_/g,'/');const raw=atob(b64+'='.repeat((4-b64.length%4)%4));return Uint8Array.from(raw,c=>c.charCodeAt(0));}
 async function action(fn){try{msg('Working...');await fn();}catch(e){msg('Error: '+e.message);}}
-let activityData=null, activityEnabled=false, activityBusy=false, activityVersion=0, activityConnected=false, serverOffset=0, modeBusy=false;
+let activityData=null, activityEnabled=false, activityBusy=false, activityVersion=0, activityConnected=false, serverOffset=0, modeBusy=false, pollingBusy=false;
 const easternFormatter = new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',timeZoneName:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit',hour12:true});
 function easternTime(value){return easternFormatter.format(new Date(value));}
 const stockStores=['Franklin Park','Briarwood'];
@@ -146,6 +148,7 @@ function updateActivityAges(){
 function renderActivity(data){
  activityData=data;activityConnected=true;serverOffset=Date.parse(data.server_time)-Date.now();
  if(!modeBusy)updateModeView(data);
+ if(!pollingBusy)updatePollingView(data);
  $('successCount').textContent=data.success_count.toLocaleString();
  $('failureCount').textContent=data.failure_count.toLocaleString();
  $('pushTiming').textContent=data.last_push?`Last push accepted ${easternTime(data.last_push.accepted_at)} · ${data.last_push.submission_ms} ms to submit · ${data.last_push.urgency} urgency. Acceptance does not confirm iPhone delivery.`:'No push timing recorded since the backend restarted.';
@@ -172,6 +175,31 @@ function renderActivity(data){
  $('activityLog').replaceChildren(...rows);$('activityLog').scrollTop=scroll;
  updateActivityAges();
 }
+function updatePollingView(data){
+ const interval=data.check_interval_seconds;
+ const supported=interval===30||interval===60;
+ const blocked=(data.cooldown_attempts||0)>0||data.cooldown_active;
+ $('fastPolling').disabled=!supported||interval===30||blocked||pollingBusy;
+ $('fastPolling').textContent=interval===30?'Using 30-second polling':'Use 30-second polling';
+ $('pollingStatus').textContent=!supported?'Connect to load the current polling rate.':`Polling every ${interval} seconds${data.polling_fallback?' · Automatic fallback after cooldown':''}.`+(blocked?' The 30-second override becomes available after a successful recovery check.':'');
+ if(data.polling_persistence_error)$('pollingStatus').textContent+=' The rate could not be saved on the Mac.';
+ if(supported){
+  for(const count of [120,360,1440]){const hours=count*interval/3600;$('limit'+count).textContent=`Latest ${count.toLocaleString()} (~${hours} ${hours===1?'hour':'hours'})`;}
+  $('retentionNote').textContent=`Each scheduled stock request appears here, even while this page is closed. The latest 1,440 checks are kept in memory (about ${1440*interval/3600} hours at the current rate); the log resets when the backend restarts.`;
+ }
+}
+$('fastPolling').onclick=async()=>{
+ pollingBusy=true;const version=++activityVersion;$('fastPolling').disabled=true;
+ try{
+  const result=await api('/api/polling','POST',{interval_seconds:30});
+  if(version!==activityVersion)return;
+  if(activityData)activityData={...activityData,...result};
+  pollingBusy=false;updatePollingView(result);
+  msg('30-second polling selected. It applies after the next scheduled check. Another block will restore the 60-second fallback.');
+  await refreshActivity(true);
+ }catch(e){if(version!==activityVersion)return;pollingBusy=false;updatePollingView(activityData||{});msg('Could not change polling rate: '+e.message);}
+ finally{pollingBusy=false;}
+};
 function updateModeView(data){
  const supported=typeof data.test_mode==='boolean';
  $('testMode').disabled=!supported||modeBusy;
@@ -227,6 +255,7 @@ for(const id of ['server','token'])$(id).addEventListener('input',()=>{
  $('cooldownMessage').hidden=true;$('cooldownMessage').textContent='';
  $('testMode').disabled=true;$('testMode').checked=false;
  $('modeStatus').textContent='Refresh the log to load the mode for this backend.';$('modeStatus').className='muted';
+ $('fastPolling').disabled=true;$('fastPolling').textContent='Use 30-second polling';$('pollingStatus').textContent='Connect to load the current polling rate.';
  $('connectionStorage').textContent='Connection edited. Tap Save connection or use a control to save these changes.';
 });
 $('saveConnection').onclick=()=>action(async()=>{credentials();msg('Connection ready.');await refreshActivity();});
