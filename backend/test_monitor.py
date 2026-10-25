@@ -4,6 +4,7 @@ import io
 import threading
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -746,6 +747,18 @@ class MonitorTests(unittest.TestCase):
             'Authorization':'Bearer '+monitor.ADMIN_TOKEN}).json
         self.assertEqual(data['check_interval_seconds'], 60)
         self.assertTrue(data['polling_fallback'])
+
+    def test_concurrent_rate_controls_keep_saved_settings_valid(self):
+        def choose(interval):
+            return monitor.app.test_client().post('/api/polling', json={'interval_seconds':interval},
+                headers={'Authorization':'Bearer '+monitor.ADMIN_TOKEN}).status_code
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            statuses = list(pool.map(choose, [30, 60]*12))
+        self.assertTrue(all(status == 200 for status in statuses))
+        self.assertIsNone(monitor.state['polling_persistence_error'])
+        import json
+        saved = json.loads(monitor.POLLING_FILE.read_text())
+        self.assertEqual(saved['check_interval_seconds'], monitor.state['check_interval_seconds'])
 
 
 if __name__ == '__main__':

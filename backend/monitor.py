@@ -41,6 +41,7 @@ COOLDOWN_SECONDS = (15 * 60, 30 * 60, 60 * 60)
 app = Flask(__name__)
 CORS(app, resources={r'/api/*': {'origins': [ALLOWED_ORIGIN], 'allow_headers': ['Authorization', 'Content-Type'], 'methods': ['GET', 'POST', 'OPTIONS']}})
 lock = threading.Lock()
+polling_save_lock = threading.Lock()
 state = {'running': False, 'completed': 0, 'last_check': None, 'last_error': None,
          'started_at': None, 'last_inventory': None, 'last_notification_at': None,
          'next_status_at': None, 'last_notification_error': None, 'stopped_at': None,
@@ -66,6 +67,10 @@ def polling_info(snapshot=None):
     return {key: snapshot[key] for key in ('check_interval_seconds', 'polling_fallback', 'polling_persistence_error')}
 
 def persist_polling():
+    with polling_save_lock:
+        return save_polling_snapshot()
+
+def save_polling_snapshot():
     data = polling_info()
     temporary = POLLING_FILE.with_suffix('.tmp')
     try:
