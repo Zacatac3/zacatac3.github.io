@@ -23,7 +23,8 @@ TOKEN_FILE = BASE / 'admin_token.txt'
 ALLOWED_ORIGIN = os.environ.get('DUO_ALLOWED_ORIGIN', 'https://zacatac3.github.io').rstrip('/')
 VAPID_SUBJECT = os.environ.get('DUO_VAPID_SUBJECT', 'https://zacatac3.github.io')
 ZIP = os.environ.get('DUO_ZIP', '43623')
-SKUS = {'White 256GB': 'MK1E4LL/A', 'Blue 256GB (verify)': 'MK1F4LL/A'}
+SKUS = {'Star White 256GB': 'MK1E4LL/A', 'Night Sky 256GB': 'MK1F4LL/A'}
+LEGACY_COLORS = {'White 256GB': 'Star White 256GB', 'Blue 256GB (verify)': 'Night Sky 256GB'}
 STORES = {'R299': 'Franklin Park', 'R230': 'Briarwood'}
 CHECK_INTERVAL_SECONDS = 60
 STATUS_INTERVAL_SECONDS = 4 * 60 * 60
@@ -189,6 +190,15 @@ def parse_inventory(payload):
         inventory[name] = outcomes
     return inventory
 
+def stock_options(inventory):
+    normalized = {store: {LEGACY_COLORS.get(color, color): available
+                          for color, available in items.items()}
+                  for store, items in (inventory or {}).items()}
+    options = [{'store': store, 'color': color,
+                'available': normalized.get(store, {}).get(color)}
+               for store in STORES.values() for color in SKUS]
+    return sorted(options, key=lambda option: option['available'] is not True)
+
 def notification_payload(inventory, reason, checked_at):
     checked = datetime.fromisoformat(checked_at).astimezone(EASTERN)
     timestamp = checked.strftime('%Y-%m-%d %I:%M:%S %p %Z')
@@ -199,14 +209,21 @@ def notification_payload(inventory, reason, checked_at):
                  if reason == 'started' else 'Stock checks and scheduled alerts are paused.']
     elif inventory is None:
         title = 'Duo monitor needs attention'
-        lines = ['Stock could not be verified. Retrying every minute.']
+        lines = [f'{option["store"]} · {option["color"]}: Unknown' for option in stock_options(None)]
+        lines.append('Stock could not be verified. Retrying every minute.')
     else:
-        in_stock = any(available for items in inventory.values() for available in items.values())
-        title = 'Duo is in stock' if in_stock else 'Duo is out of stock'
+        options = stock_options(inventory)
+        available = [option for option in options if option['available'] is True]
+        title = 'Duo is out of stock'
+        if available:
+            first = available[0]
+            title = f'In stock: {first["color"].removesuffix(" 256GB")} at {first["store"]}'
+            if len(available) > 1:
+                title += f' (+{len(available) - 1} more)'
         lines = []
-        for store, items in inventory.items():
-            available = [name for name, in_stock in items.items() if in_stock]
-            lines.append(f'{store}: ' + (', '.join(available) + ' in stock' if available else 'Out of stock'))
+        for option in options:
+            status = 'IN STOCK' if option['available'] is True else 'Out of stock' if option['available'] is False else 'Unknown'
+            lines.append(f'{option["store"]} · {option["color"]}: {status}')
     captions = {'initial_status': 'Initial stock check · Monitoring is active',
                 'stock_change': 'Stock availability changed',
                 'heartbeat': '4-hour status check · Monitoring is active',

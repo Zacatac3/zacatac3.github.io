@@ -1,8 +1,9 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#111827"><link rel="manifest" href="./manifest.json"><title>Duo Stock Monitor</title>
-<style>body{font:16px system-ui;background:#111827;color:#f9fafb;max-width:620px;margin:35px auto;padding:0 18px}input,button,select{font:inherit;padding:12px;margin:5px 0;width:100%;box-sizing:border-box;border-radius:8px}button{background:#60a5fa;color:#111827;border:0;font-weight:700;cursor:pointer}input,select{background:#1f2937;color:white;border:1px solid #64748b}pre{white-space:pre-wrap;overflow-wrap:anywhere}small,.muted{color:#cbd5e1}h2{font-size:1.3rem;margin:0}section{margin:26px 0;padding-top:22px;border-top:1px solid #374151}.activity-header{display:flex;align-items:center;justify-content:space-between;gap:12px}.badge{font-size:.8rem;font-weight:700;white-space:nowrap;border-radius:20px;padding:5px 10px;background:#374151;color:#e5e7eb}.good{background:#064e3b;color:#a7f3d0}.bad{background:#7f1d1d;color:#fecaca}.warning{background:#78350f;color:#fde68a}.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}.stat{padding:14px;background:#1f2937;border-radius:10px}.stat small{display:block;margin-bottom:6px}.stat strong{font-size:1.05rem}.toolbar{display:flex;gap:10px;align-items:end}.toolbar label{flex:1}.toolbar button{width:auto}.activity-log{list-style:none;padding:0;margin:14px 0;max-height:540px;overflow:auto;border:1px solid #374151;border-radius:10px}.activity-log li{padding:14px;border-bottom:1px solid #374151}.activity-log li:last-child{border:0}.entry-heading{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center}.entry-heading time{font-size:.9rem;font-variant-numeric:tabular-nums}.entry-meta,.entry-result{font-size:.87rem;line-height:1.5;margin:7px 0 0;overflow-wrap:anywhere}details{margin:18px 0}summary{cursor:pointer;color:#cbd5e1}#activityMessage{font-size:.9rem;line-height:1.5}button:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid #f9fafb;outline-offset:3px}</style></head><body>
+<style>body{font:16px system-ui;background:#111827;color:#f9fafb;max-width:620px;margin:35px auto;padding:0 18px}input,button,select{font:inherit;padding:12px;margin:5px 0;width:100%;box-sizing:border-box;border-radius:8px}button{background:#60a5fa;color:#111827;border:0;font-weight:700;cursor:pointer}input,select{background:#1f2937;color:white;border:1px solid #64748b}pre{white-space:pre-wrap;overflow-wrap:anywhere}small,.muted{color:#cbd5e1}h2{font-size:1.3rem;margin:0}section{margin:26px 0;padding-top:22px;border-top:1px solid #374151}.activity-header{display:flex;align-items:center;justify-content:space-between;gap:12px}.badge{font-size:.8rem;font-weight:700;white-space:nowrap;border-radius:20px;padding:5px 10px;background:#374151;color:#e5e7eb}.good{background:#064e3b;color:#a7f3d0}.bad{background:#7f1d1d;color:#fecaca}.warning{background:#78350f;color:#fde68a}.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}.stat{padding:14px;background:#1f2937;border-radius:10px}.stat small{display:block;margin-bottom:6px}.stat strong{font-size:1.05rem}.toolbar{display:flex;gap:10px;align-items:end}.toolbar label{flex:1}.toolbar button{width:auto}.activity-log{list-style:none;padding:0;margin:14px 0;max-height:540px;overflow:auto;border:1px solid #374151;border-radius:10px}.activity-log li{padding:14px;border-bottom:1px solid #374151}.activity-log li:last-child{border:0}.entry-heading{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center}.entry-heading time{font-size:.9rem;font-variant-numeric:tabular-nums}.entry-meta,.entry-result{font-size:.87rem;line-height:1.5;margin:7px 0 0;overflow-wrap:anywhere}details{margin:18px 0}summary{cursor:pointer;color:#cbd5e1}#activityMessage{font-size:.9rem;line-height:1.5}button:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid #f9fafb;outline-offset:3px}.stock-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px}.stock-cell{display:flex;flex-direction:column;gap:3px;padding:10px;border-radius:8px;background:#1f2937}.stock-cell.good{background:#064e3b}.stock-cell span{font-weight:600}.stock-cell small{font-size:.78rem}.stock-cell strong{font-size:.85rem}.stock-callout{padding:9px;border-radius:8px;margin:7px 0;font-weight:600}</style></head><body>
 <h1>Duo Stock Monitor</h1><p>Checks stock every minute. Get an alert when availability changes, plus a status notification every 4 hours, in stock or out of stock.</p>
 <p><small>Times use Eastern Time (EDT/EST), to the second, and adjust automatically for daylight saving time. Keep your Mac awake with the backend and HTTPS tunnel running. Open this app from your iPhone Home Screen.</small></p>
+<p><small>You can close this iPhone app; monitoring and push delivery continue independently on your Mac. Monitored variants: Star White 256GB and Night Sky 256GB, at Franklin Park and Briarwood.</small></p>
 <label>HTTPS tunnel URL<input id="server" type="url" placeholder="https://something.trycloudflare.com" autocomplete="off"></label>
 <label>Admin token<input id="token" type="password" placeholder="Paste token from Mac" autocomplete="off"></label>
 <button id="connect">Connect and subscribe this iPhone</button>
@@ -54,6 +55,31 @@ async function action(fn){try{msg('Working...');await fn();}catch(e){msg('Error:
 let activityData=null, activityEnabled=false, activityBusy=false, activityVersion=0, activityConnected=false, serverOffset=0;
 const easternFormatter = new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',timeZoneName:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit',hour12:true});
 function easternTime(value){return easternFormatter.format(new Date(value));}
+const stockStores=['Franklin Park','Briarwood'];
+const stockColors=['Star White 256GB','Night Sky 256GB'];
+const legacyColors={'White 256GB':'Star White 256GB','Blue 256GB (verify)':'Night Sky 256GB'};
+function stockOptions(inventory){
+ const normalized=Object.fromEntries(Object.entries(inventory||{}).map(([store,items])=>[store,Object.fromEntries(Object.entries(items).map(([color,available])=>[legacyColors[color]||color,available]))]));
+ return stockStores.flatMap(store=>stockColors.map(color=>({store,color,available:normalized[store]?.[color]}))).sort((a,b)=>Number(b.available===true)-Number(a.available===true));
+}
+function renderStock(inventory){
+ const result=document.createElement('div');result.className='entry-result';
+ const options=stockOptions(inventory), available=options.filter(option=>option.available===true);
+ if(available.length){
+  const callout=document.createElement('p');callout.className='stock-callout good';
+  callout.textContent='In stock: '+available.map(option=>option.color+' at '+option.store).join(' · ');
+  result.append(callout);
+ }
+ const grid=document.createElement('div');grid.className='stock-grid';
+ for(const option of options){
+  const cell=document.createElement('div');cell.className='stock-cell'+(option.available===true?' good':'');
+  const store=document.createElement('span');store.textContent=option.store;
+  const color=document.createElement('small');color.textContent=option.color;
+  const status=document.createElement('strong');status.textContent=option.available===true?'IN STOCK':option.available===false?'Out of stock':'Unknown';
+  cell.append(store,color,status);grid.append(cell);
+ }
+ result.append(grid);return result;
+}
 function elapsed(seconds){
  seconds=Math.max(0,Math.floor(seconds));
  if(seconds<60)return seconds+'s';
@@ -92,8 +118,8 @@ function renderActivity(data){
   const duration=entry.duration_ms<1000?entry.duration_ms+' ms':(entry.duration_ms/1000).toFixed(2)+' s';
   meta.textContent=(entry.http_status?'HTTP '+entry.http_status:'No HTTP response')+' · '+duration+(entry.gap_seconds===null?' · First recorded request':' · '+elapsed(entry.gap_seconds)+' since previous');
   if(entry.gap_seconds>data.check_interval_seconds*2+30)meta.classList.add('warning');
-  const result=document.createElement('p');result.className='entry-result';
-  result.textContent=entry.ok?Object.entries(entry.inventory).map(([store,items])=>{const available=Object.entries(items).filter(([,inStock])=>inStock).map(([name])=>name);return store+': '+(available.length?available.join(', ')+' in stock':'Out of stock');}).join(' · '):entry.error||'Inventory could not be verified.';
+  const result=renderStock(entry.ok?entry.inventory:null);
+  if(!entry.ok){const error=document.createElement('p');error.textContent=entry.error||'Inventory could not be verified.';result.append(error);}
   row.append(heading,meta,result);return row;
  });
  if(!rows.length){const row=document.createElement('li');row.textContent=data.in_flight?'Waiting for the current Apple request to finish.':'No requests recorded yet. Start monitoring to begin.';rows.push(row);}

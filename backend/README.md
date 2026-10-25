@@ -1,7 +1,12 @@
 # Duo stock monitor backend
 
-This runs locally on the Mac, behind your existing HTTPS tunnel. Keep the Mac
-awake, the backend running, and the tunnel connected for notifications to work.
+This runs locally on the Mac, behind your existing HTTPS tunnel. Stock checks
+and pushes need the Mac awake, the backend running, and internet access. The
+tunnel lets the website reach the backend for controls, status, and the log;
+once subscribed, the monitoring loop sends pushes directly to the push service.
+The iPhone Home Screen app does not need to remain open or in memory. Its saved
+push subscription is used by the Mac backend independently. This is a local Mac
+service; monitoring must be started again after restarting the backend or Mac.
 
 - Checks Franklin Park and Briarwood every 60 seconds until stopped.
 - Sends a dedicated push when monitoring starts and when it finishes stopping.
@@ -10,6 +15,9 @@ awake, the backend running, and the tunnel connected for notifications to work.
   status as `last_notification_error` and do not prevent starting or stopping.
 - Sends an initial stock status on start, then alerts when any monitored store or
   variant changes availability.
+- Every stock notification and activity entry lists both colors at both stores.
+  Available combinations appear first and an in-stock push title identifies
+  the first available color and store. Check failures show unknown availability.
 - Sends a fresh status every four hours whether stock is available or not.
   Stock-change alerts do not postpone the four-hour status check.
 - Reports failed checks without claiming stock is unavailable, retries every
@@ -28,8 +36,10 @@ awake, the backend running, and the tunnel connected for notifications to work.
 - Monitoring and its four-hour schedule restart when you restart the backend
   and start monitoring again. Missed checks while the Mac sleeps are not replayed.
 
-The existing blue SKU is still labeled `(verify)`; confirm it before relying on
-blue availability. Store and SKU configuration is in `monitor.py`.
+Apple's pickup response identifies the monitored SKUs as Star White 256GB
+(`MK1E4LL/A`) and Night Sky 256GB (`MK1F4LL/A`, the blue option). The website
+also recognizes legacy color names in retained history. Store and SKU
+configuration is in `monitor.py`.
 
 Run from the repository root using the existing environment:
 

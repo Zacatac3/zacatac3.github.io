@@ -14,7 +14,7 @@ import monitor
 
 OUT = {name: {color: False for color in monitor.SKUS} for name in monitor.STORES.values()}
 IN = copy.deepcopy(OUT)
-IN['Franklin Park']['White 256GB'] = True
+IN['Franklin Park']['Star White 256GB'] = True
 STAMP = '2026-10-24T20:34:56.789+00:00'
 
 
@@ -101,7 +101,7 @@ class MonitorTests(unittest.TestCase):
 
     def test_store_and_variant_changes_are_detected(self):
         other_store = copy.deepcopy(IN)
-        other_store['Briarwood']['Blue 256GB (verify)'] = True
+        other_store['Briarwood']['Night Sky 256GB'] = True
         sent, _ = self.run_checks(3, [OUT, IN, other_store])
         self.assertEqual([reason for _, reason, _ in sent], ['initial_status', 'stock_change', 'stock_change'])
 
@@ -206,18 +206,51 @@ class MonitorTests(unittest.TestCase):
 
     def test_notification_shows_available_store_and_variant(self):
         payload = monitor.notification_payload(IN, 'stock_change', STAMP)
-        self.assertEqual(payload['title'], 'Duo is in stock')
-        self.assertIn('Franklin Park: White 256GB in stock', payload['body'])
-        self.assertIn('Briarwood: Out of stock', payload['body'])
+        self.assertEqual(payload['title'], 'In stock: Star White at Franklin Park')
+        self.assertIn('Franklin Park · Star White 256GB: IN STOCK', payload['body'])
+        self.assertIn('Franklin Park · Night Sky 256GB: Out of stock', payload['body'])
+        self.assertIn('Briarwood · Star White 256GB: Out of stock', payload['body'])
+        self.assertIn('Briarwood · Night Sky 256GB: Out of stock', payload['body'])
+
+    def test_all_four_combinations_are_explicit_for_every_stock_pattern(self):
+        pairs = [(store, color) for store in monitor.STORES.values() for color in monitor.SKUS]
+        for pattern in range(16):
+            inventory = copy.deepcopy(OUT)
+            for index, (store, color) in enumerate(pairs):
+                inventory[store][color] = bool(pattern & (1 << index))
+            payload = monitor.notification_payload(inventory, 'heartbeat', STAMP)
+            for store, color in pairs:
+                status = 'IN STOCK' if inventory[store][color] else 'Out of stock'
+                self.assertIn(f'{store} · {color}: {status}', payload['body'])
+            options = monitor.stock_options(inventory)
+            if pattern:
+                self.assertTrue(options[0]['available'])
+                self.assertIn(options[0]['store'], payload['title'])
+                self.assertIn(options[0]['color'].removesuffix(' 256GB'), payload['title'])
+
+    def test_briarwood_blue_stock_is_immediately_identifiable(self):
+        inventory = copy.deepcopy(OUT)
+        inventory['Briarwood']['Night Sky 256GB'] = True
+        payload = monitor.notification_payload(inventory, 'stock_change', STAMP)
+        self.assertEqual(payload['title'], 'In stock: Night Sky at Briarwood')
+        self.assertEqual(payload['body'].splitlines()[1], 'Briarwood · Night Sky 256GB: IN STOCK')
+
+    def test_legacy_color_names_are_supported_without_losing_stock_status(self):
+        inventory = {store: {'White 256GB': False, 'Blue 256GB (verify)': store == 'Briarwood'}
+                     for store in monitor.STORES.values()}
+        options = monitor.stock_options(inventory)
+        self.assertEqual(len(options), 4)
+        self.assertEqual(options[0], {'store': 'Briarwood', 'color': 'Night Sky 256GB', 'available': True})
 
     def test_error_notification_does_not_claim_out_of_stock(self):
         payload = monitor.notification_payload(None, 'error', STAMP)
         self.assertIn('could not be verified', payload['body'])
         self.assertNotIn('out of stock', payload['body'].lower())
+        self.assertEqual(payload['body'].count(': Unknown'), 4)
 
     def test_inventory_parsing_and_incomplete_response(self):
         stores = [{'storeNumber': store_id, 'partsAvailability': {
-            sku: {'pickupDisplay': 'available' if (store_id, color) == ('R299', 'White 256GB')
+            sku: {'pickupDisplay': 'available' if (store_id, color) == ('R299', 'Star White 256GB')
                   else 'unavailable'} for color, sku in monitor.SKUS.items()}}
                   for store_id in monitor.STORES]
         response = Mock()
