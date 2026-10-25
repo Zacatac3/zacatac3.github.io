@@ -40,7 +40,8 @@ service; monitoring must be started again after restarting the backend or Mac.
   add up to a minute of detection delay before push delivery begins.
 - HTTP 541, 403, and 429 trigger a quiet period with no Apple inventory requests:
   15 minutes after the first blocked response, then 30 minutes and 60 minutes
-  after subsequent blocked recovery probes. Longer `Retry-After` values are
+  after subsequent failed recovery probes, including timeouts or invalid
+  responses that do not prove recovery. Longer `Retry-After` values are
   respected. Only one check is made after each quiet period. A successful check
   clears the backoff and restores one-minute polling with a recovery push.
 - Cooldown deadlines and consecutive block counts are saved in the ignored

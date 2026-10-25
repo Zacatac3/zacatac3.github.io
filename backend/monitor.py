@@ -442,8 +442,11 @@ def run_monitor():
             except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
                 error = f'{type(exc).__name__}: {exc}'
                 response = getattr(exc, 'response', None)
-                if response is not None and response.status_code in BLOCK_STATUSES:
-                    begin_cooldown(response.status_code, response.headers.get('Retry-After'))
+                with lock:
+                    previous_block = state['cooldown_status'] if state['cooldown_attempts'] else None
+                blocked_status = response.status_code if response is not None and response.status_code in BLOCK_STATUSES else previous_block
+                if blocked_status:
+                    begin_cooldown(blocked_status, response.headers.get('Retry-After') if response is not None else None)
                     cooldown_started = True
                 print(f'[{utc_now()}] Check {index} failed: {error}', flush=True)
             else:

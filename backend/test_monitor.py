@@ -614,6 +614,23 @@ class MonitorTests(unittest.TestCase):
             self.assertTrue(monitor.cooldown_info()['cooldown_active'])
             self.assertTrue(monitor.COOLDOWN_FILE.exists())
 
+    def test_failed_recovery_probe_does_not_resume_minute_retries(self):
+        clock = FakeClock(4)
+        response = requests.Response()
+        response.status_code = 541
+        check = Mock(side_effect=[requests.HTTPError('blocked', response=response),
+                                  requests.Timeout('recovery not confirmed'), OUT, OUT])
+        with patch.object(monitor, 'stop_event', clock), \
+             patch.object(monitor.time, 'monotonic', lambda: clock.seconds), \
+             patch.object(monitor, 'utc_now', clock.utc_now), \
+             patch.object(monitor, 'check_inventory', check), \
+             patch.object(monitor, 'send_notification', side_effect=lambda *args: clock.utc_now()), \
+             redirect_stdout(io.StringIO()):
+            monitor.run_monitor()
+        self.assertEqual(clock.waits, [900, 1800, 60, 60])
+        self.assertEqual(check.call_count, 4)
+        self.assertEqual(monitor.state['cooldown_attempts'], 0)
+
     def test_cooldown_status_is_visible_in_activity_and_push(self):
         with patch.object(monitor, 'utc_now', return_value=STAMP):
             monitor.begin_cooldown(541)
