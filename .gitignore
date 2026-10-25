@@ -1,1 +1,5 @@
-backend/
+backend/*
+!backend/monitor.py
+!backend/requirements.txt
+!backend/test_monitor.py
+!backend/README.md

@@ -1,19 +1,23 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#111827"><link rel="manifest" href="./manifest.json"><title>Duo Stock Monitor</title>
 <style>body{font:16px system-ui;background:#111827;color:#f9fafb;max-width:620px;margin:35px auto;padding:0 18px}input,button{font:inherit;padding:12px;margin:5px 0;width:100%;box-sizing:border-box;border-radius:8px}button{background:#60a5fa;color:#111827;border:0;font-weight:700}input{background:#1f2937;color:white;border:1px solid #64748b}pre{white-space:pre-wrap;overflow-wrap:anywhere}small{color:#cbd5e1}</style></head><body>
-<h1>Duo Stock Monitor</h1><p>Open from your iPhone Home Screen. Your Mac must be running the backend and HTTPS tunnel.</p>
+<h1>Duo Stock Monitor</h1><p>Checks stock every minute. Get an alert when availability changes, plus a status notification every 4 hours, in stock or out of stock.</p>
+<p><small>Notification times use EST (UTC−5), to the second. Keep your Mac awake with the backend and HTTPS tunnel running. Open this app from your iPhone Home Screen.</small></p>
 <label>HTTPS tunnel URL<input id="server" type="url" placeholder="https://something.trycloudflare.com" autocomplete="off"></label>
 <label>Admin token<input id="token" type="password" placeholder="Paste token from Mac" autocomplete="off"></label>
 <button id="connect">Connect and subscribe this iPhone</button>
-<button id="start">Start 10-minute test</button>
+<button id="start">Start monitoring</button>
 <button id="statusButton">Check backend status</button>
-<button id="stop">Stop test</button>
+<button id="stop">Stop monitoring</button>
 <p id="message" role="status">Ready.</p><pre id="details"></pre>
 <small>The token is held in this app session only; don't put it in GitHub or share it. The HTTPS tunnel URL changes when restarted.</small>
 <script>
 const VAPID_PUBLIC_KEY = 'BK4YmrxPxLqA5h40KNDT8K-Ct3LHw62XHgFHavBEEbgOJ6dnVkXZL7TkxbEqbMGZhVZ4B4NVv38ZDuh29x4SgIU';
 const $ = id => document.getElementById(id);
 const msg = s => $('message').textContent = s;
+if ('serviceWorker' in navigator) {
+ navigator.serviceWorker.register('./sw.js', {updateViaCache:'none'}).catch(e=>msg('App update failed: '+e.message));
+}
 $('server').value = sessionStorage.getItem('duo_server') || '';
 function credentials(){
  const server = $('server').value.trim().replace(/\/+$/, '');
@@ -35,7 +39,7 @@ async function action(fn){try{msg('Working...');await fn();}catch(e){msg('Error:
 $('connect').onclick=()=>action(async()=>{
  credentials();
  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) throw Error('Install this site to your iPhone Home Screen and open it there.');
- const registration=await navigator.serviceWorker.register('./sw.js');
+ await navigator.serviceWorker.register('./sw.js', {updateViaCache:'none'});
  const permission=await Notification.requestPermission();
  if(permission!=='granted')throw Error('Notification permission not granted');
  const ready=await navigator.serviceWorker.ready;
@@ -47,9 +51,9 @@ $('connect').onclick=()=>action(async()=>{
  }
  if(!sub)sub=await ready.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:publicKeyBytes(VAPID_PUBLIC_KEY)});
  const result=await api('/api/subscribe','POST',sub.toJSON());
- msg('iPhone subscribed! You can start the 10-minute test.');$('details').textContent=JSON.stringify(result,null,2);
+ msg('iPhone subscribed! Tap Start monitoring to begin.');$('details').textContent=JSON.stringify(result,null,2);
 });
-$('start').onclick=()=>action(async()=>{const r=await api('/api/start','POST',{});msg('Started. First check runs immediately; then once per minute.');$('details').textContent=JSON.stringify(r,null,2);});
+$('start').onclick=()=>action(async()=>{const r=await api('/api/start','POST',{});msg('Monitoring started. First status arrives now; stock changes trigger alerts, with a status check every 4 hours.');$('details').textContent=JSON.stringify(r,null,2);});
 $('statusButton').onclick=()=>action(async()=>{const r=await api('/api/status');msg('Backend reachable.');$('details').textContent=JSON.stringify(r,null,2);});
 $('stop').onclick=()=>action(async()=>{const r=await api('/api/stop','POST',{});msg('Stop requested.');$('details').textContent=JSON.stringify(r,null,2);});
 </script></body></html>
