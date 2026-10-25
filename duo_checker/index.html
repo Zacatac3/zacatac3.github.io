@@ -1,60 +1,55 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#111827">
-  <link rel="manifest" href="./manifest.json">
-  <title>Duo Stock Monitor</title>
-</head>
-<body>
-  <h1>Duo Stock Monitor</h1>
-
-  <p id="status">Checking browser support...</p>
-
-  <button id="subscribe" disabled>
-    Enable Push Notifications
-  </button>
-
-  <pre id="subscription"></pre>
-
-  <script>
-    const status = document.getElementById("status");
-    const button = document.getElementById("subscribe");
-
-    async function init() {
-      if (!("serviceWorker" in navigator) ||
-          !("PushManager" in window) ||
-          !("Notification" in window)) {
-        status.textContent = "Push notifications are not supported here.";
-        return;
-      }
-
-      await navigator.serviceWorker.register("./sw.js");
-
-      status.textContent = "Push supported. Ready to subscribe.";
-      button.disabled = false;
-    }
-
-    button.addEventListener("click", async () => {
-      try {
-        const permission = await Notification.requestPermission();
-
-        if (permission !== "granted") {
-          status.textContent = "Notification permission denied.";
-          return;
-        }
-
-        status.textContent =
-          "Permission granted. Next: configure VAPID subscription.";
-      } catch (error) {
-        status.textContent = error.message;
-      }
-    });
-
-    init().catch(error => {
-      status.textContent = error.message;
-    });
-  </script>
-</body>
-</html>
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#111827"><link rel="manifest" href="./manifest.json"><title>Duo Stock Monitor</title>
+<style>body{font:16px system-ui;background:#111827;color:#f9fafb;max-width:620px;margin:35px auto;padding:0 18px}input,button{font:inherit;padding:12px;margin:5px 0;width:100%;box-sizing:border-box;border-radius:8px}button{background:#60a5fa;color:#111827;border:0;font-weight:700}input{background:#1f2937;color:white;border:1px solid #64748b}pre{white-space:pre-wrap;overflow-wrap:anywhere}small{color:#cbd5e1}</style></head><body>
+<h1>Duo Stock Monitor</h1><p>Open from your iPhone Home Screen. Your Mac must be running the backend and HTTPS tunnel.</p>
+<label>HTTPS tunnel URL<input id="server" type="url" placeholder="https://something.trycloudflare.com" autocomplete="off"></label>
+<label>Admin token<input id="token" type="password" placeholder="Paste token from Mac" autocomplete="off"></label>
+<button id="connect">Connect and subscribe this iPhone</button>
+<button id="start">Start 10-minute test</button>
+<button id="statusButton">Check backend status</button>
+<button id="stop">Stop test</button>
+<p id="message" role="status">Ready.</p><pre id="details"></pre>
+<small>The token is held in this app session only; don't put it in GitHub or share it. The HTTPS tunnel URL changes when restarted.</small>
+<script>
+const VAPID_PUBLIC_KEY = 'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAErhiavE/EuoDmHjQo0NPwr4K3csfDrZceAUdq8EQRuA4np2dWRdkvtOTFsSpswZmFVngHg1W/fxkO6Hb3HhKAhQ==';
+const $ = id => document.getElementById(id);
+const msg = s => $('message').textContent = s;
+$('server').value = sessionStorage.getItem('duo_server') || '';
+function credentials(){
+ const server = $('server').value.trim().replace(/\/+$/, '');
+ const token = $('token').value.trim();
+ if (!/^https:\/\/[a-z0-9.-]+(?::443)?$/i.test(server)) throw Error('Enter a valid HTTPS tunnel origin (no path).');
+ if (!token) throw Error('Enter your admin token.');
+ sessionStorage.setItem('duo_server', server);
+ return {server, token};
+}
+async function api(path, method='GET', body){
+ const {server,token} = credentials();
+ const response = await fetch(server + path, {method, headers:{'Authorization':'Bearer '+token, ...(body?{'Content-Type':'application/json'}:{})}, body:body?JSON.stringify(body):undefined, cache:'no-store'});
+ const data = await response.json().catch(()=>({error:'Non-JSON response'}));
+ if (!response.ok) throw Error(data.error || `HTTP ${response.status}`);
+ return data;
+}
+function publicKeyBytes(key){const b64=key.replace(/-/g,'+').replace(/_/g,'/');const raw=atob(b64+'='.repeat((4-b64.length%4)%4));return Uint8Array.from(raw,c=>c.charCodeAt(0));}
+async function action(fn){try{msg('Working...');await fn();}catch(e){msg('Error: '+e.message);}}
+$('connect').onclick=()=>action(async()=>{
+ credentials();
+ if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) throw Error('Install this site to your iPhone Home Screen and open it there.');
+ const registration=await navigator.serviceWorker.register('./sw.js');
+ const permission=await Notification.requestPermission();
+ if(permission!=='granted')throw Error('Notification permission not granted');
+ const ready=await navigator.serviceWorker.ready;
+ let sub=await ready.pushManager.getSubscription();
+ if(sub){
+   const existing=Array.from(new Uint8Array(sub.options.applicationServerKey||[]));
+   const desired=Array.from(publicKeyBytes(VAPID_PUBLIC_KEY));
+   if(existing.length && existing.some((v,i)=>v!==desired[i])) {await sub.unsubscribe();sub=null;}
+ }
+ if(!sub)sub=await ready.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:publicKeyBytes(VAPID_PUBLIC_KEY)});
+ const result=await api('/api/subscribe','POST',sub.toJSON());
+ msg('iPhone subscribed! You can start the 10-minute test.');$('details').textContent=JSON.stringify(result,null,2);
+});
+$('start').onclick=()=>action(async()=>{const r=await api('/api/start','POST',{});msg('Started. First check runs immediately; then once per minute.');$('details').textContent=JSON.stringify(r,null,2);});
+$('statusButton').onclick=()=>action(async()=>{const r=await api('/api/status');msg('Backend reachable.');$('details').textContent=JSON.stringify(r,null,2);});
+$('stop').onclick=()=>action(async()=>{const r=await api('/api/stop','POST',{});msg('Stop requested.');$('details').textContent=JSON.stringify(r,null,2);});
+</script></body></html>
