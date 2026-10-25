@@ -1,0 +1,11 @@
+{
+  "name": "Duo Stock Monitor",
+  "short_name": "Duo Monitor",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#111827",
+  "theme_color": "#111827",
+  "icons": []
+}

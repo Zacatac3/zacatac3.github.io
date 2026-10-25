@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111827">
+  <link rel="manifest" href="./manifest.json">
+  <title>Duo Stock Monitor</title>
+</head>
+<body>
+  <h1>Duo Stock Monitor</h1>
+
+  <p id="status">Checking browser support...</p>
+
+  <button id="subscribe" disabled>
+    Enable Push Notifications
+  </button>
+
+  <pre id="subscription"></pre>
+
+  <script>
+    const status = document.getElementById("status");
+    const button = document.getElementById("subscribe");
+
+    async function init() {
+      if (!("serviceWorker" in navigator) ||
+          !("PushManager" in window) ||
+          !("Notification" in window)) {
+        status.textContent = "Push notifications are not supported here.";
+        return;
+      }
+
+      await navigator.serviceWorker.register("./sw.js");
+
+      status.textContent = "Push supported. Ready to subscribe.";
+      button.disabled = false;
+    }
+
+    button.addEventListener("click", async () => {
+      try {
+        const permission = await Notification.requestPermission();
+
+        if (permission !== "granted") {
+          status.textContent = "Notification permission denied.";
+          return;
+        }
+
+        status.textContent =
+          "Permission granted. Next: configure VAPID subscription.";
+      } catch (error) {
+        status.textContent = error.message;
+      }
+    });
+
+    init().catch(error => {
+      status.textContent = error.message;
+    });
+  </script>
+</body>
+</html>
