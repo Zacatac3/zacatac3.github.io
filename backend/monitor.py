@@ -1,11 +1,13 @@
 """Local-only backend. Expose it via an HTTPS tunnel; require admin bearer token."""
 import json
+import math
 import os
 import secrets
 import threading
 import time
 from collections import deque
 from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
@@ -19,6 +21,7 @@ BASE = Path(__file__).resolve().parent
 SUB_FILE = BASE / 'subscription.json'
 KEY_FILE = BASE / 'private_key.pem'
 TOKEN_FILE = BASE / 'admin_token.txt'
+COOLDOWN_FILE = BASE / 'cooldown.json'
 # Set this to your exact GitHub Pages origin if using a custom domain.
 ALLOWED_ORIGIN = os.environ.get('DUO_ALLOWED_ORIGIN', 'https://zacatac3.github.io').rstrip('/')
 VAPID_SUBJECT = os.environ.get('DUO_VAPID_SUBJECT', 'https://zacatac3.github.io')
@@ -31,6 +34,8 @@ CHECK_INTERVAL_SECONDS = 60
 STATUS_INTERVAL_SECONDS = 4 * 60 * 60
 EASTERN = ZoneInfo('America/New_York')
 HISTORY_LIMIT = 1440
+BLOCK_STATUSES = {403, 429, 541}
+COOLDOWN_SECONDS = (15 * 60, 30 * 60, 60 * 60)
 
 app = Flask(__name__)
 CORS(app, resources={r'/api/*': {'origins': [ALLOWED_ORIGIN], 'allow_headers': ['Authorization', 'Content-Type'], 'methods': ['GET', 'POST', 'OPTIONS']}})
@@ -38,7 +43,9 @@ lock = threading.Lock()
 state = {'running': False, 'completed': 0, 'last_check': None, 'last_error': None,
          'started_at': None, 'last_inventory': None, 'last_notification_at': None,
          'next_status_at': None, 'last_notification_error': None, 'stopped_at': None,
-         'test_mode': False, 'mode_revision': 0, 'last_push': None}
+         'test_mode': False, 'mode_revision': 0, 'last_push': None,
+         'cooldown_until': None, 'cooldown_attempts': 0, 'cooldown_status': None,
+         'cooldown_persistence_error': None}
 stop_event = threading.Event()
 check_history = deque(maxlen=HISTORY_LIMIT)
 activity = {'in_flight': None}
@@ -49,6 +56,81 @@ def utc_now():
 def mode_details(test_mode):
     return {'test_mode': test_mode, 'mode_label': 'iPhone 18 Pro test' if test_mode else 'Duo',
             'skus': TEST_SKUS if test_mode else SKUS}
+
+def cooldown_info(snapshot=None):
+    if snapshot is None:
+        with lock:
+            snapshot = dict(state)
+    until = snapshot.get('cooldown_until')
+    remaining = max(0, math.ceil((datetime.fromisoformat(until) -
+                                 datetime.fromisoformat(utc_now())).total_seconds())) if until else 0
+    return {'cooldown_until': until, 'cooldown_remaining_seconds': remaining,
+            'cooldown_active': remaining > 0, 'cooldown_attempts': snapshot.get('cooldown_attempts', 0),
+            'cooldown_status': snapshot.get('cooldown_status'),
+            'cooldown_persistence_error': snapshot.get('cooldown_persistence_error')}
+
+def persist_cooldown(data):
+    temporary = COOLDOWN_FILE.with_suffix('.tmp')
+    try:
+        with open(temporary, 'w') as handle:
+            os.chmod(temporary, 0o600)
+            json.dump(data, handle)
+        temporary.replace(COOLDOWN_FILE)
+    except OSError as exc:
+        with lock:
+            state['cooldown_persistence_error'] = str(exc)
+        print('Could not persist Apple cooldown:', type(exc).__name__, flush=True)
+
+def begin_cooldown(status_code, retry_after=None):
+    now = datetime.fromisoformat(utc_now())
+    with lock:
+        attempt = state['cooldown_attempts']
+    seconds = COOLDOWN_SECONDS[min(attempt, len(COOLDOWN_SECONDS) - 1)]
+    if retry_after:
+        try:
+            seconds = max(seconds, int(retry_after))
+        except (TypeError, ValueError):
+            try:
+                date = parsedate_to_datetime(retry_after)
+                if date.tzinfo is None:
+                    date = date.replace(tzinfo=timezone.utc)
+                seconds = max(seconds, math.ceil((date - now).total_seconds()))
+            except (TypeError, ValueError, OverflowError):
+                pass
+    data = {'cooldown_until': (now + timedelta(seconds=seconds)).isoformat(timespec='milliseconds'),
+            'cooldown_attempts': attempt + 1, 'cooldown_status': status_code}
+    with lock:
+        state.update(**data, cooldown_persistence_error=None)
+        if check_history:
+            check_history[-1] = {**check_history[-1], 'cooldown_until': data['cooldown_until']}
+    persist_cooldown(data)
+    return cooldown_info()
+
+def clear_cooldown():
+    with lock:
+        state.update(cooldown_until=None, cooldown_attempts=0, cooldown_status=None,
+                     cooldown_persistence_error=None)
+    try:
+        COOLDOWN_FILE.unlink(missing_ok=True)
+    except OSError as exc:
+        with lock:
+            state['cooldown_persistence_error'] = str(exc)
+
+def load_cooldown():
+    if not COOLDOWN_FILE.exists():
+        return
+    try:
+        data = json.loads(COOLDOWN_FILE.read_text())
+        deadline = datetime.fromisoformat(data['cooldown_until'])
+        if deadline.tzinfo is None or not isinstance(data['cooldown_attempts'], int) or data['cooldown_attempts'] < 1 or data['cooldown_status'] not in BLOCK_STATUSES:
+            raise ValueError('Invalid cooldown data')
+        with lock:
+            state.update({key: data[key] for key in ('cooldown_until', 'cooldown_attempts', 'cooldown_status')})
+    except (OSError, ValueError, KeyError, TypeError):
+        # A corrupt saved block must not silently permit immediate retries.
+        begin_cooldown(541)
+
+load_cooldown()
 
 def get_token():
     if not TOKEN_FILE.exists():
@@ -92,6 +174,7 @@ def status():
     result.update(check_interval_seconds=CHECK_INTERVAL_SECONDS,
                   status_interval_seconds=STATUS_INTERVAL_SECONDS)
     result.update(mode_details(result['test_mode']))
+    result.update(cooldown_info(result))
     return jsonify(result)
 
 @app.get('/api/activity')
@@ -109,6 +192,7 @@ def recent_activity():
                   'failure_count': sum(not row['ok'] for row in retained),
                   'in_flight': activity['in_flight'], 'running': state['running'],
                   'started_at': state['started_at'], 'last_push': state['last_push'],
+                  **cooldown_info(dict(state)),
                   **mode_details(state['test_mode'])}
     result.update(server_time=utc_now(), check_interval_seconds=CHECK_INTERVAL_SECONDS)
     return jsonify(result)
@@ -126,7 +210,7 @@ def set_mode():
             state['last_inventory'] = None
         result = mode_details(state['test_mode'])
     return jsonify(ok=True, changed=changed, **result,
-                   message='Mode applies on the next stock check, within 60 seconds while monitoring.')
+                   **cooldown_info(), message='Mode applies on the next permitted stock check; it does not bypass an Apple cooldown.')
 
 @app.post('/api/start')
 def start():
@@ -141,7 +225,7 @@ def start():
         stop_event.clear()
     threading.Thread(target=run_monitor, daemon=True).start()
     return jsonify(ok=True, continuous=True, interval_seconds=CHECK_INTERVAL_SECONDS,
-                   status_interval_seconds=STATUS_INTERVAL_SECONDS)
+                   status_interval_seconds=STATUS_INTERVAL_SECONDS, **cooldown_info())
 
 @app.post('/api/stop')
 def stop():
@@ -254,6 +338,17 @@ def notification_payload(inventory, reason, checked_at, test_mode=False):
     if reason in ('started', 'stopped'):
         title = f'Duo monitoring {reason}'
         lines = [timestamp]
+        if reason == 'started' and state.get('cooldown_until'):
+            info = cooldown_info()
+            if info['cooldown_active']:
+                retry = datetime.fromisoformat(info['cooldown_until']).astimezone(EASTERN)
+                lines.append(retry.strftime('Inventory paused until %I:%M:%S %p %Z'))
+    elif reason == 'cooldown':
+        info = cooldown_info()
+        retry = datetime.fromisoformat(info['cooldown_until']).astimezone(EASTERN)
+        title = 'Duo · Apple cooldown'
+        lines = [f'HTTP {info["cooldown_status"]} · Stock unknown',
+                 retry.strftime('Retry: %Y-%m-%d %I:%M:%S %p %Z'), timestamp]
     elif inventory is None:
         title = 'Duo · Check failed'
         lines = compact_stock_lines(None, test_mode) + [timestamp]
@@ -323,6 +418,10 @@ def run_monitor():
             test_mode = state['test_mode']
         send_lifecycle_notification('started', utc_now(), test_mode)
         while not stop_event.is_set():
+            remaining = cooldown_info()['cooldown_remaining_seconds']
+            if remaining:
+                if stop_event.wait(remaining): break
+                continue
             with lock:
                 test_mode = state['test_mode']
                 revision = state['mode_revision']
@@ -337,16 +436,24 @@ def run_monitor():
             next_check = time.monotonic() + CHECK_INTERVAL_SECONDS
             inventory = None
             error = None
+            cooldown_started = False
             try:
                 inventory = check_inventory(test_mode)
             except (requests.RequestException, ValueError, KeyError, TypeError) as exc:
                 error = f'{type(exc).__name__}: {exc}'
+                response = getattr(exc, 'response', None)
+                if response is not None and response.status_code in BLOCK_STATUSES:
+                    begin_cooldown(response.status_code, response.headers.get('Retry-After'))
+                    cooldown_started = True
                 print(f'[{utc_now()}] Check {index} failed: {error}', flush=True)
+            else:
+                if state['cooldown_attempts']:
+                    clear_cooldown()
             checked_at = utc_now()
             if stop_event.is_set(): break
             with lock:
                 mode_changed = revision != state['mode_revision']
-            if mode_changed:
+            if mode_changed and not cooldown_started:
                 # Keep the old request in history under its original mode, then
                 # check the new mode without sending a stale-mode stock alert.
                 last_mode = None
@@ -356,7 +463,7 @@ def run_monitor():
             if inventory is None:
                 if not inventory_failed:
                     error_notification_pending = True
-                reason = 'error' if error_notification_pending or status_due else None
+                reason = 'cooldown' if cooldown_started else 'error' if error_notification_pending or status_due else None
                 inventory_failed = True
                 recovery_pending = True
             else:
@@ -394,10 +501,11 @@ def run_monitor():
                         state['last_notification_error'] = push_error
                     print(f'[{utc_now()}] {error}', flush=True)
             with lock:
-                if revision == state['mode_revision']:
+                if revision == state['mode_revision'] or cooldown_started:
                     state.update(completed=index, last_check=checked_at, last_error=error,
                                  last_inventory=inventory)
-            if stop_event.wait(max(0, next_check - time.monotonic())): break
+            wait_seconds = cooldown_info()['cooldown_remaining_seconds'] or max(0, next_check - time.monotonic())
+            if stop_event.wait(wait_seconds): break
     finally:
         stopped_at = utc_now()
         with lock:

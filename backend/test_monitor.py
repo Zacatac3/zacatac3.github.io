@@ -2,9 +2,11 @@
 import copy
 import io
 import threading
+import tempfile
 import unittest
 from contextlib import redirect_stdout
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import requests
@@ -43,6 +45,11 @@ class MonitorTests(unittest.TestCase):
         self.original_state = copy.deepcopy(monitor.state)
         self.original_history = list(monitor.check_history)
         self.original_activity = dict(monitor.activity)
+        self.cooldown_directory = tempfile.TemporaryDirectory()
+        self.cooldown_file_patch = patch.object(monitor, 'COOLDOWN_FILE', Path(self.cooldown_directory.name) / 'cooldown.json')
+        self.cooldown_file_patch.start()
+        monitor.state.update(cooldown_until=None, cooldown_attempts=0, cooldown_status=None,
+                             cooldown_persistence_error=None)
         monitor.check_history.clear()
         monitor.activity['in_flight'] = None
 
@@ -52,6 +59,8 @@ class MonitorTests(unittest.TestCase):
         monitor.check_history.clear()
         monitor.check_history.extend(self.original_history)
         monitor.activity.update(self.original_activity)
+        self.cooldown_file_patch.stop()
+        self.cooldown_directory.cleanup()
 
     def run_checks(self, checks, inventory=OUT, send_failure=None, include_lifecycle=False,
                    lifecycle_failure=None):
@@ -523,6 +532,115 @@ class MonitorTests(unittest.TestCase):
              patch.object(monitor, 'check_inventory', side_effect=check), redirect_stdout(io.StringIO()):
             monitor.run_monitor()
         self.assertEqual(sent, [('started', False), ('initial_status', True), ('stopped', True)])
+
+    def test_cooldown_escalates_15_30_60_minutes_and_resets_on_success(self):
+        with patch.object(monitor, 'utc_now', return_value=STAMP):
+            for expected in (900, 1800, 3600, 3600):
+                info = monitor.begin_cooldown(541)
+                self.assertEqual(info['cooldown_remaining_seconds'], expected)
+                self.assertTrue(info['cooldown_active'])
+            self.assertTrue(monitor.COOLDOWN_FILE.exists())
+            monitor.clear_cooldown()
+            self.assertFalse(monitor.COOLDOWN_FILE.exists())
+            self.assertEqual(monitor.state['cooldown_attempts'], 0)
+            self.assertEqual(monitor.begin_cooldown(541)['cooldown_remaining_seconds'], 900)
+
+    def test_cooldown_respects_longer_retry_after_seconds_and_date(self):
+        with patch.object(monitor, 'utc_now', return_value=STAMP):
+            self.assertEqual(monitor.begin_cooldown(429, '7200')['cooldown_remaining_seconds'], 7200)
+            monitor.clear_cooldown()
+            self.assertEqual(monitor.begin_cooldown(541, 'Sat, 24 Oct 2026 23:34:56 GMT')['cooldown_remaining_seconds'], 10800)
+            monitor.clear_cooldown()
+            self.assertEqual(monitor.begin_cooldown(541, 'not-a-date')['cooldown_remaining_seconds'], 900)
+
+    def test_saved_cooldown_survives_reload_start_stop_and_mode_changes(self):
+        with patch.object(monitor, 'utc_now', return_value=STAMP):
+            original = monitor.begin_cooldown(541)
+            monitor.state.update(cooldown_until=None, cooldown_attempts=0, cooldown_status=None)
+            monitor.load_cooldown()
+            self.assertEqual(monitor.cooldown_info()['cooldown_until'], original['cooldown_until'])
+            client = monitor.app.test_client()
+            headers = {'Authorization': 'Bearer ' + monitor.ADMIN_TOKEN}
+            monitor.state['running'] = False
+            with patch.object(monitor, 'SUB_FILE') as subscription, patch.object(monitor, 'KEY_FILE') as key, \
+                 patch.object(monitor.threading, 'Thread'), patch.object(monitor, 'stop_event', threading.Event()), \
+                 patch.object(monitor.requests, 'get') as apple:
+                subscription.exists.return_value = key.exists.return_value = True
+                response = client.post('/api/start', headers=headers)
+                self.assertTrue(response.json['cooldown_active'])
+                client.post('/api/stop', headers=headers)
+                client.post('/api/mode', json={'test_mode': True}, headers=headers)
+                apple.assert_not_called()
+            self.assertEqual(monitor.cooldown_info()['cooldown_until'], original['cooldown_until'])
+
+    def test_cooldown_makes_only_one_probe_after_each_quiet_period(self):
+        clock = FakeClock(4)
+        times = []
+        sent = []
+        def check(test_mode=False):
+            times.append(clock.seconds)
+            if len(times) <= 2:
+                response = requests.Response()
+                response.status_code = 541
+                raise requests.HTTPError('blocked', response=response)
+            return IN
+        def send(inventory, reason, checked_at, test_mode=False):
+            sent.append((clock.seconds, reason))
+            return clock.utc_now()
+        with patch.object(monitor, 'stop_event', clock), \
+             patch.object(monitor.time, 'monotonic', lambda: clock.seconds), \
+             patch.object(monitor, 'utc_now', clock.utc_now), \
+             patch.object(monitor, 'check_inventory', side_effect=check), \
+             patch.object(monitor, 'send_notification', send), redirect_stdout(io.StringIO()):
+            monitor.run_monitor()
+        self.assertEqual(times, [0, 900, 2700, 2760])
+        self.assertEqual(clock.waits, [900, 1800, 60, 60])
+        self.assertEqual([row for row in sent if row[1] not in ('started', 'stopped')],
+                         [(0, 'cooldown'), (900, 'cooldown'), (2700, 'recovered'), (2760, 'in_stock')])
+        self.assertEqual(monitor.state['cooldown_attempts'], 0)
+
+    def test_stop_interrupts_cooldown_without_querying_apple_or_clearing_guard(self):
+        event = Mock()
+        event.is_set.return_value = False
+        event.wait.return_value = True
+        with patch.object(monitor, 'utc_now', return_value=STAMP):
+            monitor.begin_cooldown(541)
+            with patch.object(monitor, 'stop_event', event), \
+                 patch.object(monitor, 'check_inventory') as check, \
+                 patch.object(monitor, 'send_lifecycle_notification'), redirect_stdout(io.StringIO()):
+                monitor.run_monitor()
+            event.wait.assert_called_once_with(900)
+            check.assert_not_called()
+            self.assertTrue(monitor.cooldown_info()['cooldown_active'])
+            self.assertTrue(monitor.COOLDOWN_FILE.exists())
+
+    def test_cooldown_status_is_visible_in_activity_and_push(self):
+        with patch.object(monitor, 'utc_now', return_value=STAMP):
+            monitor.begin_cooldown(541)
+            client = monitor.app.test_client()
+            data = client.get('/api/activity', headers={'Authorization': 'Bearer '+monitor.ADMIN_TOKEN}).json
+            self.assertEqual(data['cooldown_remaining_seconds'], 900)
+            payload = monitor.notification_payload(None, 'cooldown', STAMP)
+            self.assertEqual(payload['title'], 'Duo · Apple cooldown')
+            self.assertIn('HTTP 541', payload['body'])
+            self.assertIn('Stock unknown', payload['body'])
+            self.assertIn('Retry:', payload['body'])
+            self.assertNotIn('OOS', payload['body'])
+
+    def test_403_and_429_use_the_same_quiet_period(self):
+        for status in (403, 429):
+            monitor.clear_cooldown()
+            clock = FakeClock(1)
+            response = requests.Response()
+            response.status_code = status
+            with patch.object(monitor, 'stop_event', clock), \
+                 patch.object(monitor.time, 'monotonic', lambda: clock.seconds), \
+                 patch.object(monitor, 'utc_now', clock.utc_now), \
+                 patch.object(monitor, 'check_inventory', side_effect=requests.HTTPError('blocked', response=response)) as check, \
+                 patch.object(monitor, 'send_notification', return_value=clock.utc_now()), redirect_stdout(io.StringIO()):
+                monitor.run_monitor()
+            check.assert_called_once()
+            self.assertEqual(clock.waits, [900])
 
 
 if __name__ == '__main__':

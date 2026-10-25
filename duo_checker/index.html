@@ -2,6 +2,7 @@
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#111827"><link rel="manifest" href="./manifest.json"><title>Duo Stock Monitor</title>
 <style>body{font:16px system-ui;background:#111827;color:#f9fafb;max-width:620px;margin:35px auto;padding:0 18px}input,button,select{font:inherit;padding:12px;margin:5px 0;width:100%;box-sizing:border-box;border-radius:8px}button{background:#60a5fa;color:#111827;border:0;font-weight:700;cursor:pointer}input,select{background:#1f2937;color:white;border:1px solid #64748b}pre{white-space:pre-wrap;overflow-wrap:anywhere}small,.muted{color:#cbd5e1}h2{font-size:1.3rem;margin:0}section{margin:26px 0;padding-top:22px;border-top:1px solid #374151}.activity-header{display:flex;align-items:center;justify-content:space-between;gap:12px}.badge{font-size:.8rem;font-weight:700;white-space:nowrap;border-radius:20px;padding:5px 10px;background:#374151;color:#e5e7eb}.good{background:#064e3b;color:#a7f3d0}.bad{background:#7f1d1d;color:#fecaca}.warning{background:#78350f;color:#fde68a}.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}.stat{padding:14px;background:#1f2937;border-radius:10px}.stat small{display:block;margin-bottom:6px}.stat strong{font-size:1.05rem}.toolbar{display:flex;gap:10px;align-items:end}.toolbar label{flex:1}.toolbar button{width:auto}.activity-log{list-style:none;padding:0;margin:14px 0;max-height:540px;overflow:auto;border:1px solid #374151;border-radius:10px}.activity-log li{padding:14px;border-bottom:1px solid #374151}.activity-log li:last-child{border:0}.entry-heading{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center}.entry-heading time{font-size:.9rem;font-variant-numeric:tabular-nums}.entry-meta,.entry-result{font-size:.87rem;line-height:1.5;margin:7px 0 0;overflow-wrap:anywhere}details{margin:18px 0}summary{cursor:pointer;color:#cbd5e1}#activityMessage{font-size:.9rem;line-height:1.5}button:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid #f9fafb;outline-offset:3px}.stock-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px}.stock-cell{display:flex;flex-direction:column;gap:3px;padding:10px;border-radius:8px;background:#1f2937}.stock-cell.good{background:#064e3b}.stock-cell span{font-weight:600}.stock-cell small{font-size:.78rem}.stock-cell strong{font-size:.85rem}.stock-callout{padding:9px;border-radius:8px;margin:7px 0;font-weight:600}.test-controls{padding:14px;margin:12px 0;border:1px solid #64748b;border-radius:10px}.test-controls p{font-size:.86rem;line-height:1.5;margin:10px 0 0}.test-toggle{display:flex;align-items:center;gap:12px;font-weight:700}.test-toggle input{width:24px;height:24px;flex:none;margin:0;padding:0;accent-color:#fbbf24}.test-toggle input:disabled{opacity:.5}.secondary{background:transparent;color:#cbd5e1;border:1px solid #64748b}#connectionStorage{font-size:.85rem;line-height:1.5}</style></head><body>
 <h1>Duo Stock Monitor</h1><p>Checks stock every minute and sends a notification on every check while anything is in stock. Availability changes trigger alerts too, plus a status check every 4 hours when everything stays out of stock.</p>
+<p><small>If Apple blocks inventory requests, checks pause for 15 minutes. A blocked recovery probe waits 30 minutes, then 60 minutes. Normal one-minute polling resumes after a successful check.</small></p>
 <p><small>Push summaries use White / Blue and IN STOCK / OOS, with one line per store and an Eastern timestamp to the second. Real Duo stock alerts start with 🚨 DUO IN STOCK. Each in-stock check creates a separate notification; the log keeps every request.</small></p>
 <p><small>Times use Eastern Time (EDT/EST), to the second, and adjust automatically for daylight saving time. Keep your Mac awake with the backend and HTTPS tunnel running. Open this app from your iPhone Home Screen.</small></p>
 <p><small>You can close this iPhone app; monitoring and push delivery continue independently on your Mac. Monitored variants: Star White 256GB and Night Sky 256GB, at Franklin Park and Briarwood.</small></p>
@@ -13,7 +14,7 @@
 <button id="connect">Connect and subscribe this iPhone</button>
 <div class="test-controls">
  <label class="test-toggle"><input id="testMode" type="checkbox" role="switch" disabled>Test with iPhone 18 Pro</label>
- <p class="muted">Uses Burgundy 256GB, SKU MJQ54LL/A, at both stores instead of the Duo colors. Switching modes sends a fresh stock status on the next check, within 60 seconds while monitoring.</p>
+ <p class="muted">Uses Burgundy 256GB, SKU MJQ54LL/A, at both stores instead of the Duo colors. Switching modes sends a fresh status on the next permitted check, normally within 60 seconds. It does not bypass an Apple cooldown.</p>
  <p id="modeStatus" role="status">Refresh the log or check backend status to load the current mode.</p>
 </div>
 <button id="start">Start monitoring</button>
@@ -22,6 +23,7 @@
 <p id="message" role="status">Ready.</p>
 <section aria-labelledby="activityTitle">
  <div class="activity-header"><h2 id="activityTitle">Apple request activity</h2><span id="activityState" class="badge" role="status">Not connected</span></div>
+ <p id="cooldownMessage" class="muted" role="status" hidden></p>
  <p class="muted">Each scheduled stock request appears here, even while this page is closed. The latest 1,440 checks are kept in memory (about 24 hours); the log resets when the backend restarts.</p>
  <div class="stats">
   <div class="stat"><small>Monitoring session</small><strong id="sessionAge">—</strong></div>
@@ -124,9 +126,17 @@ function updateActivityAges(){
  const age=latest?(now-Date.parse(latest))/1000:null;
  $('lastRequestAge').textContent=age===null?'No checks yet':elapsed(age)+' ago';
  let label='Stopped', style='badge';
+ const remaining=activityData.cooldown_until?Math.max(0,Math.ceil((Date.parse(activityData.cooldown_until)-now)/1000)):0;
+ $('cooldownMessage').hidden=!activityData.cooldown_until;
+ if(activityData.cooldown_until){
+  $('cooldownMessage').textContent=remaining>0?`Apple inventory requests paused after HTTP ${activityData.cooldown_status}. Next permitted retry: ${easternTime(activityData.cooldown_until)} (${elapsed(remaining)} remaining). ${activityData.running?'One recovery check will run after this quiet period.':'Monitoring is stopped; starting it still respects this timer.'}`:activityData.running?'Cooldown elapsed. Waiting for one recovery check; normal polling resumes only after success.':'Cooldown elapsed. Start monitoring when ready for a recovery check.';
+  if(activityData.cooldown_persistence_error)$('cooldownMessage').textContent+=' The cooldown could not be saved on the Mac; restarting the backend may lose this timer.';
+ }
  if(!activityConnected){label='Connection lost';style+=' bad';}
+ else if(remaining>0){label=activityData.running?'Cooling down':'Stopped · cooldown';style+=' warning';}
  else if(activityData.running){
-  if(age!==null&&age>activityData.check_interval_seconds*2+30){label='Checks delayed';style+=' warning';}
+  if(activityData.cooldown_attempts>0){label='Recovery check due';style+=' warning';}
+  else if(age!==null&&age>activityData.check_interval_seconds*2+30){label='Checks delayed';style+=' warning';}
   else if(activityData.in_flight){label='Checking Apple';}
   else if(activityData.entries[0]&&!activityData.entries[0].ok){label='Last check failed';style+=' bad';}
   else{label='Monitoring';style+=' good';}
@@ -152,6 +162,7 @@ function renderActivity(data){
   meta.textContent=(entry.http_status?'HTTP '+entry.http_status:'No HTTP response')+' · '+duration+(entry.gap_seconds===null?' · First recorded request':' · '+elapsed(entry.gap_seconds)+' since previous');
   if(entry.gap_seconds>data.check_interval_seconds*2+30)meta.classList.add('warning');
   if(entry.push)meta.textContent+=` · Push accepted ${easternTime(entry.push.accepted_at)} (${entry.push.submission_ms} ms, ${entry.push.urgency})`;
+  if(entry.cooldown_until)meta.textContent+=` · Cooldown until ${easternTime(entry.cooldown_until)}`;
   const result=renderStock(entry.ok?entry.inventory:null,entry.test_mode===true);
   if(!entry.ok){const error=document.createElement('p');error.textContent=entry.error||'Inventory could not be verified.';result.append(error);}
   row.append(heading,meta,result);return row;
@@ -178,7 +189,7 @@ $('testMode').onchange=async()=>{
   if(version!==activityVersion)return;
   if(activityData)activityData={...activityData,...result};
   modeBusy=false;updateModeView(result);
-  msg((desired?'Test mode enabled.':'Duo mode restored.')+' The next scheduled check will send a fresh stock status.');
+  msg((desired?'Test mode enabled.':'Duo mode restored.')+(result.cooldown_active?' Waiting for the Apple cooldown to finish.':' The next scheduled check will send a fresh stock status.'));
   await refreshActivity(true);
  }catch(e){if(version!==activityVersion)return;modeBusy=false;updateModeView({test_mode:previous});msg('Could not change mode: '+e.message);}
  finally{modeBusy=false;}
@@ -213,6 +224,7 @@ for(const id of ['server','token'])$(id).addEventListener('input',()=>{
  $('activityMessage').textContent='Tap Refresh log to load activity using these credentials.';
  $('activityLog').replaceChildren();
  $('pushTiming').textContent='Push timing will appear after connecting.';
+ $('cooldownMessage').hidden=true;$('cooldownMessage').textContent='';
  $('testMode').disabled=true;$('testMode').checked=false;
  $('modeStatus').textContent='Refresh the log to load the mode for this backend.';$('modeStatus').className='muted';
  $('connectionStorage').textContent='Connection edited. Tap Save connection or use a control to save these changes.';
@@ -248,7 +260,7 @@ $('connect').onclick=()=>action(async()=>{
  msg('iPhone subscribed! Tap Start monitoring to begin.');$('details').textContent=JSON.stringify(result,null,2);
  await refreshActivity();
 });
-$('start').onclick=()=>action(async()=>{const r=await api('/api/start','POST',{});msg('Monitoring started. A push will confirm the start, followed by the first stock status.');$('details').textContent=JSON.stringify(r,null,2);await refreshActivity();});
+$('start').onclick=()=>action(async()=>{const r=await api('/api/start','POST',{});msg(r.cooldown_active?'Monitoring enabled. Apple requests remain paused until '+easternTime(r.cooldown_until)+'.':'Monitoring started. A push will confirm the start, followed by the first stock status.');$('details').textContent=JSON.stringify(r,null,2);await refreshActivity();});
 $('statusButton').onclick=()=>action(async()=>{const r=await api('/api/status');msg('Backend reachable.');$('details').textContent=JSON.stringify(r,null,2);await refreshActivity();});
 $('stop').onclick=()=>action(async()=>{const r=await api('/api/stop','POST',{});msg(r.already_stopped?'Monitoring is already stopped.':'Stop requested. A push will confirm when monitoring has stopped.');$('details').textContent=JSON.stringify(r,null,2);await refreshActivity();});
 if(restoreConnection())refreshActivity(true);

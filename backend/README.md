@@ -38,8 +38,23 @@ service; monitoring must be started again after restarting the backend or Mac.
   marked `Push sent` were taken before submission completed and do not measure
   phone delivery latency. The polling interval remains 60 seconds, which can
   add up to a minute of detection delay before push delivery begins.
-- Reports failed checks without claiming stock is unavailable, retries every
-  minute, and sends a recovery notification when inventory checks work again.
+- HTTP 541, 403, and 429 trigger a quiet period with no Apple inventory requests:
+  15 minutes after the first blocked response, then 30 minutes and 60 minutes
+  after subsequent blocked recovery probes. Longer `Retry-After` values are
+  respected. Only one check is made after each quiet period. A successful check
+  clears the backoff and restores one-minute polling with a recovery push.
+- Cooldown deadlines and consecutive block counts are saved in the ignored
+  `backend/cooldown.json`. Stop/start, test-mode changes, and backend restarts
+  cannot reset or bypass the wait. Stopping interrupts the wait immediately,
+  without deleting the saved cooldown. Other tools on the same IP are outside
+  this monitor's control.
+- The website shows Cooling down, a countdown, the next permitted retry, and
+  the block that started each quiet period in the log. It sends one cooldown
+  push per blocked attempt; it does not make inventory requests just to refresh
+  the page. The timing policy is conservative: Apple's exact first-versus-last
+  request block expiry is not known or guaranteed.
+- Other failed checks remain unknown, normally retry every minute, and send a
+  recovery notification when inventory checks work again.
 - Notification bodies and website activity times use `America/New_York` to
   show Eastern Time to the second: EDT during daylight saving time and EST
   during standard time. Start/stop pushes show the time of the event.
