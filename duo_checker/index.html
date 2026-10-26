@@ -1,55 +1,53 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#111827"><link rel="manifest" href="./manifest.json"><title>Duo Stock Monitor</title>
-<style>body{font:16px system-ui;background:#111827;color:#f9fafb;max-width:620px;margin:35px auto;padding:0 18px}input,button,select{font:inherit;padding:12px;margin:5px 0;width:100%;box-sizing:border-box;border-radius:8px}button{background:#60a5fa;color:#111827;border:0;font-weight:700;cursor:pointer}input,select{background:#1f2937;color:white;border:1px solid #64748b}pre{white-space:pre-wrap;overflow-wrap:anywhere}small,.muted{color:#cbd5e1}h2{font-size:1.3rem;margin:0}section{margin:26px 0;padding-top:22px;border-top:1px solid #374151}.activity-header{display:flex;align-items:center;justify-content:space-between;gap:12px}.badge{font-size:.8rem;font-weight:700;white-space:nowrap;border-radius:20px;padding:5px 10px;background:#374151;color:#e5e7eb}.good{background:#064e3b;color:#a7f3d0}.bad{background:#7f1d1d;color:#fecaca}.warning{background:#78350f;color:#fde68a}.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}.stat{padding:14px;background:#1f2937;border-radius:10px}.stat small{display:block;margin-bottom:6px}.stat strong{font-size:1.05rem}.toolbar{display:flex;gap:10px;align-items:end}.toolbar label{flex:1}.toolbar button{width:auto}.activity-log{list-style:none;padding:0;margin:14px 0;max-height:540px;overflow:auto;border:1px solid #374151;border-radius:10px}.activity-log li{padding:14px;border-bottom:1px solid #374151}.activity-log li:last-child{border:0}.entry-heading{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center}.entry-heading time{font-size:.9rem;font-variant-numeric:tabular-nums}.entry-meta,.entry-result{font-size:.87rem;line-height:1.5;margin:7px 0 0;overflow-wrap:anywhere}details{margin:18px 0}summary{cursor:pointer;color:#cbd5e1}#activityMessage{font-size:.9rem;line-height:1.5}button:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid #f9fafb;outline-offset:3px}.stock-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px}.stock-cell{display:flex;flex-direction:column;gap:3px;padding:10px;border-radius:8px;background:#1f2937}.stock-cell.good{background:#064e3b}.stock-cell span{font-weight:600}.stock-cell small{font-size:.78rem}.stock-cell strong{font-size:.85rem}.stock-callout{padding:9px;border-radius:8px;margin:7px 0;font-weight:600}.test-controls{padding:14px;margin:12px 0;border:1px solid #64748b;border-radius:10px}.test-controls p{font-size:.86rem;line-height:1.5;margin:10px 0 0}.test-toggle{display:flex;align-items:center;gap:12px;font-weight:700}.test-toggle input{width:24px;height:24px;flex:none;margin:0;padding:0;accent-color:#fbbf24}.test-toggle input:disabled{opacity:.5}.secondary{background:transparent;color:#cbd5e1;border:1px solid #64748b}#connectionStorage{font-size:.85rem;line-height:1.5}button:disabled{opacity:.5;cursor:default}.polling-controls{display:flex;align-items:center;gap:12px;margin:8px 0}.polling-controls button{width:90px;flex:none}.polling-controls output{flex:1;text-align:center;font-size:1.2rem;font-weight:700;font-variant-numeric:tabular-nums}</style></head><body>
-<h1>Duo Stock Monitor</h1><p>Checks stock at your selected rate and sends a notification on every check while anything is in stock. Availability changes trigger alerts too, plus a status check every 4 hours when everything stays out of stock.</p>
-<p><small>Adjust polling from 30 to 300 seconds below. A failed check raises rates below 60 seconds to 60; rates of 60 seconds or higher are kept. Apple blocks still pause requests for 15, 30, then 60 minutes.</small></p>
-<p><small>Push summaries use White / Blue and IN STOCK / OOS, with one line per store and an Eastern timestamp to the second. Real Duo stock alerts start with 🚨 DUO IN STOCK. Each in-stock check creates a separate notification; the log keeps every request.</small></p>
-<p><small>Times use Eastern Time (EDT/EST), to the second, and adjust automatically for daylight saving time. Keep your Mac awake with the backend and HTTPS tunnel running. Open this app from your iPhone Home Screen.</small></p>
-<p><small>You can close this iPhone app; monitoring and push delivery continue independently on your Mac. Monitored variants: Star White 256GB and Night Sky 256GB, at Franklin Park and Briarwood.</small></p>
-<label>HTTPS tunnel URL<input id="server" type="url" placeholder="https://something.trycloudflare.com" autocomplete="off"></label>
+<style>body{font:16px system-ui;background:#111827;color:#f9fafb;max-width:620px;margin:35px auto;padding:0 18px}input,button,select{font:inherit;padding:12px;margin:5px 0;width:100%;box-sizing:border-box;border-radius:8px}button{background:#60a5fa;color:#111827;border:0;font-weight:700;cursor:pointer}input,select{background:#1f2937;color:white;border:1px solid #64748b}pre{white-space:pre-wrap;overflow-wrap:anywhere}small,.muted{color:#cbd5e1}h2{font-size:1.3rem;margin:0}section{margin:26px 0;padding-top:22px;border-top:1px solid #374151}.activity-header{display:flex;align-items:center;justify-content:space-between;gap:12px}.badge{font-size:.8rem;font-weight:700;white-space:nowrap;border-radius:20px;padding:5px 10px;background:#374151;color:#e5e7eb}.good{background:#064e3b;color:#a7f3d0}.bad{background:#7f1d1d;color:#fecaca}.warning{background:#78350f;color:#fde68a}.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}.stat{padding:14px;background:#1f2937;border-radius:10px}.stat small{display:block;margin-bottom:6px}.stat strong{font-size:1.05rem}.toolbar{display:flex;gap:10px;align-items:end}.toolbar label{flex:1}.toolbar button{width:auto}.activity-log{list-style:none;padding:0;margin:14px 0;max-height:540px;overflow:auto;border:1px solid #374151;border-radius:10px}.activity-log li{padding:14px;border-bottom:1px solid #374151}.activity-log li:last-child{border:0}.entry-heading{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center}.entry-heading time{font-size:.9rem;font-variant-numeric:tabular-nums}.entry-meta,.entry-result{font-size:.87rem;line-height:1.5;margin:7px 0 0;overflow-wrap:anywhere}details{margin:18px 0}summary{cursor:pointer;color:#cbd5e1}#activityMessage{font-size:.9rem;line-height:1.5}button:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid #f9fafb;outline-offset:3px}.stock-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:8px}.stock-cell{display:flex;flex-direction:column;gap:3px;padding:10px;border-radius:8px;background:#1f2937}.stock-cell.good{background:#064e3b}.stock-cell span{font-weight:600}.stock-cell small{font-size:.78rem}.stock-cell strong{font-size:.85rem}.stock-callout{padding:9px;border-radius:8px;margin:7px 0;font-weight:600}.test-controls{padding:14px;margin:12px 0;border:1px solid #64748b;border-radius:10px}.test-controls p{font-size:.86rem;line-height:1.5;margin:10px 0 0}.test-toggle{display:flex;align-items:center;gap:12px;font-weight:700}.test-toggle input{width:24px;height:24px;flex:none;margin:0;padding:0;accent-color:#fbbf24}.test-toggle input:disabled{opacity:.5}.secondary{background:transparent;color:#cbd5e1;border:1px solid #64748b}#connectionStorage{font-size:.85rem;line-height:1.5}button:disabled{opacity:.5;cursor:default}.polling-controls{display:flex;align-items:center;gap:12px;margin:8px 0}.polling-controls button{width:90px;flex:none}.polling-controls output{flex:1;text-align:center;font-size:1.2rem;font-weight:700;font-variant-numeric:tabular-nums}
+*{box-sizing:border-box}body{margin:24px auto;padding:0 18px calc(110px + env(safe-area-inset-bottom));line-height:1.45}h1{font-size:1.55rem;margin:0}h2{font-size:1.1rem}p{margin:10px 0}header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:22px}header small{display:block;margin-top:4px}button,input,select{min-height:44px}button{margin:0}label{display:block;font-size:.88rem}input,select{margin:5px 0 12px}.card{padding:18px;background:#182233;border:1px solid #374151;border-radius:14px;margin:14px 0}.card summary{font-weight:600;color:#f9fafb}.card[open] summary{margin-bottom:16px}.row{display:flex;gap:10px;align-items:center}.row>*{flex:1;min-width:0}.compact{width:auto;padding:9px 14px;font-size:.88rem}.secondary{border-color:#475569}.quiet{background:transparent;color:#cbd5e1;font-weight:500;border:0}.danger{color:#fca5a5}.monitor-actions{display:grid;grid-template-columns:2fr 1fr;gap:10px;margin-top:16px}.polling-controls{margin:14px 0 0}.polling-controls button{width:64px;padding:10px;font-size:.9rem;background:#28364c;color:#e2e8f0}.polling-controls output{font-size:1.05rem}.stats{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin:14px 0}.stat{padding:10px 8px}.stat small{font-size:.7rem}.stat strong{font-size:.85rem}.activity-log{max-height:340px;margin-bottom:0}.activity-header{flex-wrap:wrap;gap:8px}.toolbar{gap:8px}.toolbar label{font-size:.8rem}.toolbar select{margin-bottom:0;padding:10px;font-size:.85rem}.toolbar button{margin:0}.test-controls{border:0;padding:0;margin:0}.test-toggle{font-size:.9rem}#connectionStorage,#modeStatus,#pollingStatus,#activityMessage,#pushTiming{font-size:.8rem}#pollingStatus{margin-bottom:0}#activityMessage{margin-bottom:8px}#cooldownMessage{padding:10px;background:#78350f;border-radius:8px;font-size:.85rem}section{margin:20px 0;padding-top:18px}#feedback{position:fixed;bottom:calc(14px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);width:calc(100% - 28px);max-width:584px;z-index:20;background:#24364d;border:1px solid #60a5fa;border-radius:12px;box-shadow:0 8px 30px #0008;display:flex;align-items:center;gap:12px;padding:12px 14px}#feedback[hidden]{display:none}#feedback[data-error=true]{background:#451e26;border-color:#f87171}#message{flex:1;font-size:.9rem;margin:0;overflow-wrap:anywhere}#dismissFeedback{flex:none;width:32px;min-height:32px;padding:0;font-size:1.3rem;color:#e2e8f0;background:transparent}dialog{background:#182233;color:#f9fafb;border:1px solid #475569;border-radius:16px;padding:22px;width:calc(100% - 32px);max-width:560px;max-height:80dvh;overflow:auto}dialog::backdrop{background:#000a}dialog h2{margin:20px 0 8px}dialog p{font-size:.9rem;color:#cbd5e1}dialog header{position:sticky;top:-22px;background:#182233;padding:12px 0;margin:0}dialog header h2{margin:0}dialog header button{flex:none}input:focus-visible{outline:2px solid #60a5fa;outline-offset:2px}@media(max-width:380px){body{padding-left:12px;padding-right:12px}.card{padding:14px}.stats{grid-template-columns:1fr 1fr}h1{font-size:1.3rem}}
+</style></head><body>
+<header><div><h1>Duo Stock Monitor</h1><small>Franklin Park &amp; Briarwood</small></div><button id="openHelp" class="secondary compact" aria-haspopup="dialog">Help</button></header>
+<main>
+<details id="connectionPanel" class="card" open><summary>Connection settings</summary>
+<label>HTTPS tunnel URL<input id="server" type="url" placeholder="https://something.trycloudflare.com" autocomplete="off" spellcheck="false" autocapitalize="none"></label>
 <label>Admin token<input id="token" type="password" placeholder="Paste token from Mac" autocomplete="off"></label>
-<button id="saveConnection">Save connection on this device</button>
-<button id="forgetConnection" class="secondary">Forget saved connection</button>
-<p id="connectionStorage" class="muted" role="status">Connection settings will be saved on this device when you save or use them.</p>
-<button id="connect">Connect and subscribe this iPhone</button>
-<div class="test-controls">
- <label class="test-toggle"><input id="testMode" type="checkbox" role="switch" disabled>Test with iPhone 18 Pro</label>
- <p class="muted">Uses Burgundy 256GB, SKU MJQ54LL/A, at both stores instead of the Duo colors. Switching modes sends a fresh status on the next permitted check at the selected polling rate. It does not bypass an Apple cooldown.</p>
- <p id="modeStatus" role="status">Refresh the log or check backend status to load the current mode.</p>
+<div class="row"><button id="saveConnection">Save &amp; connect</button><button id="statusButton" class="secondary">Check status</button></div>
+<p id="connectionStorage" class="muted">Saved only on this device.</p>
+<button id="connect" class="secondary">Enable iPhone notifications</button>
+<button id="forgetConnection" class="quiet compact danger">Forget connection</button>
+</details>
+<div class="card">
+<div class="activity-header"><h2>Monitoring</h2><span id="activityState" class="badge" role="status">Not connected</span></div>
+<p id="cooldownMessage" role="status" hidden></p>
+<div class="monitor-actions"><button id="start">Start monitoring</button><button id="stop" class="secondary">Stop</button></div>
+<div class="polling-controls" role="group" aria-label="Polling interval"><button id="pollingMinus" aria-label="Decrease polling interval by 15 seconds" disabled>−15s</button><output id="pollingValue" aria-live="polite">—</output><button id="pollingPlus" aria-label="Increase polling interval by 15 seconds" disabled>+15s</button></div>
+<p id="pollingStatus" class="muted" role="status">Connect to set the polling interval.</p>
 </div>
-<p id="pollingStatus" class="muted" role="status">Connect to load the current polling rate.</p>
-<div class="polling-controls" role="group" aria-label="Polling interval">
- <button id="pollingMinus" aria-label="Decrease polling interval by 15 seconds" disabled>−15s</button>
- <output id="pollingValue" aria-live="polite">—</output>
- <button id="pollingPlus" aria-label="Increase polling interval by 15 seconds" disabled>+15s</button>
-</div>
-<small>30–300 seconds, saved on the Mac. Increasing the interval can extend the current wait. Decreasing it applies after the pending scheduled check. Neither control bypasses a cooldown.</small>
-<button id="start">Start monitoring</button>
-<button id="statusButton">Check backend status</button>
-<button id="stop">Stop monitoring</button>
-<p id="message" role="status">Ready.</p>
 <section aria-labelledby="activityTitle">
- <div class="activity-header"><h2 id="activityTitle">Apple request activity</h2><span id="activityState" class="badge" role="status">Not connected</span></div>
- <p id="cooldownMessage" class="muted" role="status" hidden></p>
- <p class="muted" id="retentionNote">Each scheduled stock request appears here, even while this page is closed. The latest 1,440 checks are kept in memory; the time span depends on your rate. The log resets when the backend restarts.</p>
- <div class="stats">
-  <div class="stat"><small>Monitoring session</small><strong id="sessionAge">—</strong></div>
-  <div class="stat"><small>Last Apple request</small><strong id="lastRequestAge">—</strong></div>
-  <div class="stat"><small>Successful checks retained</small><strong id="successCount">—</strong></div>
-  <div class="stat"><small>Failed checks retained</small><strong id="failureCount">—</strong></div>
- </div>
- <div class="toolbar"><label>Show recent checks<select id="historyLimit"><option id="limit120" value="120">Latest 120</option><option id="limit360" value="360">Latest 360</option><option id="limit1440" value="1440">Latest 1,440</option></select></label><button id="refreshActivity">Refresh log</button></div>
- <p id="activityMessage" role="status">Enter your tunnel URL and token, then tap Refresh log. Refreshing the log does not send an extra request to Apple.</p>
- <p id="pushTiming" class="muted" role="status">Push timing will appear after the backend sends a notification.</p>
- <ol id="activityLog" class="activity-log" aria-label="Recent Apple requests, newest first"><li>No checks loaded yet.</li></ol>
- <small>Refreshes every 15 seconds while this page is visible. Timestamps use Eastern Time (EDT/EST). A long gap between requests may indicate sleep or downtime.</small>
+<div class="activity-header"><h2 id="activityTitle">Recent activity</h2><button id="refreshActivity" class="quiet compact">Refresh</button></div>
+<div class="stats"><div class="stat"><small>Session</small><strong id="sessionAge">—</strong></div><div class="stat"><small>Last check</small><strong id="lastRequestAge">—</strong></div><div class="stat"><small>Successful</small><strong id="successCount">—</strong></div><div class="stat"><small>Failed</small><strong id="failureCount">—</strong></div></div>
+<ol id="activityLog" class="activity-log" aria-label="Recent Apple requests, newest first"><li>Connect to load recent checks.</li></ol>
+<p id="activityMessage" class="muted" role="status">Updates every 15 seconds · Eastern Time</p>
+<details><summary>Log options &amp; push timing</summary><label>Show recent checks<select id="historyLimit"><option id="limit120" value="120">Latest 120</option><option id="limit360" value="360">Latest 360</option><option id="limit1440" value="1440">Latest 1,440</option></select></label><p id="retentionNote" class="muted">The latest 1,440 checks are retained until the backend restarts.</p><p id="pushTiming" class="muted" role="status">No push timing loaded.</p></details>
 </section>
-<details><summary>Backend details</summary><pre id="details"></pre></details>
-<small>Your tunnel URL and token are saved on this device across app restarts. Edit and save them when changing tunnels or computers, or use Forget saved connection to remove them. Closing this app or forgetting its connection does not stop the Mac monitor.</small>
+<details class="card"><summary>Testing &amp; diagnostics</summary><div class="test-controls"><label class="test-toggle"><input id="testMode" type="checkbox" role="switch" disabled>Test with iPhone 18 Pro</label><p id="modeStatus" role="status" class="muted">Connect to load the current mode.</p></div><details><summary>Backend response</summary><pre id="details"></pre></details></details>
+</main>
+<dialog id="helpDialog" aria-labelledby="helpTitle"><header><h2 id="helpTitle">How it works</h2><button id="closeHelp" class="secondary compact" autofocus>Close</button></header>
+<h2>Connect once</h2><p>Start Python and the HTTPS tunnel on your Mac. Save the tunnel URL and admin token here, then enable iPhone notifications from the installed Home Screen app. A restarted quick tunnel gets a new URL; update it in Connection settings. Your URL and token are saved on this device. Forgetting them does not stop monitoring or unsubscribe pushes.</p>
+<h2>Monitoring &amp; notifications</h2><p>Tap Start monitoring after restarting the backend. Keep your Mac awake and connected to the internet. You can close the iPhone app. Checks cover Star White and Night Sky 256GB at Franklin Park and Briarwood.</p><p>Every in-stock check sends a separate push. Availability changes also trigger alerts, with a status notification every four hours. Summaries show White / Blue, IN STOCK / OOS, and Eastern Time. Real Duo alerts start with 🚨 DUO IN STOCK.</p>
+<h2>Polling &amp; cooldowns</h2><p>Choose 30–300 seconds in 15-second steps; the interval is saved on the Mac. Increasing it can extend the pending wait. Decreasing it applies after the pending check. A failed check raises intervals below 60 seconds to 60. Apple blocks pause requests for 15, then 30, then 60 minutes. Controls and restarts do not bypass cooldowns.</p>
+<h2>Activity &amp; delivery</h2><p>The log refreshes every 15 seconds while visible and records checks even with the app closed. The latest 1,440 requests stay in memory until Python restarts. Times use Eastern Time with daylight saving adjustments. Long gaps can indicate sleep or downtime. Push acceptance confirms submission to the push service, not delivery to your phone.</p>
+<h2>Test mode</h2><p>Testing replaces Duo with iPhone 18 Pro Burgundy 256GB (MJQ54LL/A) at both stores. A mode change sends fresh status on the next permitted scheduled check and respects cooldowns. Switch it off to restore Duo. Python restarts default to Duo mode.</p></dialog>
+<div id="feedback" hidden><p id="message" role="status" aria-live="polite" aria-atomic="true"></p><button id="dismissFeedback" aria-label="Dismiss status message">×</button></div>
 <script>
 const VAPID_PUBLIC_KEY = 'BK4YmrxPxLqA5h40KNDT8K-Ct3LHw62XHgFHavBEEbgOJ6dnVkXZL7TkxbEqbMGZhVZ4B4NVv38ZDuh29x4SgIU';
 const $ = id => document.getElementById(id);
-const msg = s => $('message').textContent = s;
+const msg = s => {
+ $('message').textContent=s;
+ $('feedback').hidden=false;
+ $('feedback').dataset.error=/error|failed|could not|timed out/i.test(s);
+};
+$('dismissFeedback').onclick=()=>{$('feedback').hidden=true;};
+$('openHelp').onclick=()=>$('helpDialog').showModal();
+$('closeHelp').onclick=()=>$('helpDialog').close();
+$('helpDialog').addEventListener('click',e=>{if(e.target===$('helpDialog')){const r=e.target.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)e.target.close();}});
 if ('serviceWorker' in navigator) {
  navigator.serviceWorker.register('./sw.js', {updateViaCache:'none'}).catch(e=>msg('App update failed: '+e.message));
 }
@@ -89,7 +87,12 @@ async function api(path, method='GET', body){
  return data;
 }
 function publicKeyBytes(key){const b64=key.replace(/-/g,'+').replace(/_/g,'/');const raw=atob(b64+'='.repeat((4-b64.length%4)%4));return Uint8Array.from(raw,c=>c.charCodeAt(0));}
-async function action(fn){try{msg('Working...');await fn();}catch(e){msg('Error: '+e.message);}}
+async function action(fn){
+ const buttons=['saveConnection','connect','start','statusButton','stop'];
+ buttons.forEach(id=>$(id).disabled=true);
+ try{msg('Working…');await fn();}catch(e){msg('Error: '+e.message);}
+ finally{buttons.forEach(id=>$(id).disabled=false);}
+}
 let activityData=null, activityEnabled=false, activityBusy=false, activityVersion=0, activityConnected=false, serverOffset=0, modeBusy=false, pollingBusy=false;
 const easternFormatter = new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',timeZoneName:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit',hour12:true});
 function easternTime(value){return easternFormatter.format(new Date(value));}
@@ -187,7 +190,7 @@ function updatePollingView(data){
  $('pollingMinus').disabled=!supported||interval<=30||(blocked&&interval-15<60)||pollingBusy;
  $('pollingPlus').disabled=!supported||interval>=300||pollingBusy;
  $('pollingValue').textContent=supported?interval+' seconds':'—';
- $('pollingStatus').textContent=!supported?'Connect to load the current polling rate.':`Polling every ${interval} seconds${data.polling_fallback?' · Automatic 60-second fallback after a failed check':''}.`+(blocked?' You can choose 60 seconds or slower now; faster rates unlock after successful recovery.':'');
+ $('pollingStatus').textContent=!supported?'Connect to load the current polling rate.':`Checks every ${interval}s${data.polling_fallback?' · Automatic 60-second fallback after a failed check':''}.`+(blocked?' You can choose 60 seconds or slower now; faster rates unlock after successful recovery.':'');
  if(data.polling_persistence_error)$('pollingStatus').textContent+=' The rate could not be saved on the Mac.';
  if(supported){
   for(const count of [120,360,1440]){const hours=count*interval/3600;$('limit'+count).textContent=`Latest ${count.toLocaleString()} (~${hours} ${hours===1?'hour':'hours'})`;}
@@ -238,18 +241,19 @@ async function refreshActivity(quiet=false){
  try{
   const {server,token}=credentials();
   activityEnabled=true;
-  if(!quiet)$('activityMessage').textContent='Loading recent Apple requests…';
+  if(!quiet){$('activityMessage').textContent='Loading recent Apple requests…';msg('Connecting to backend…');}
   const response=await fetch(server+'/api/activity?limit='+$('historyLimit').value,{headers:{'Authorization':'Bearer '+token},cache:'no-store',signal:controller.signal});
   if(version!==activityVersion)return;
   if(!response.ok)throw Error(response.status===404?'Backend update required to show request activity.':'Could not load log (HTTP '+response.status+').');
   const data=await response.json();
-  if(version===activityVersion)renderActivity(data);
+  if(version===activityVersion){renderActivity(data);if(!quiet)msg(data.running?'Connected · monitoring is running.':'Connected · monitoring is stopped.');}
  }catch(e){
   if(version!==activityVersion)return;
   activityConnected=false;
   $('activityState').textContent='Connection lost';$('activityState').className='badge bad';
   $('activityMessage').textContent=(e.name==='AbortError'?'Log request timed out.':e.message)+(activityData?' Showing the last loaded history; new checks could not be confirmed.':'');
   updateActivityAges();
+  if(!quiet)msg('Connection failed: '+(e.name==='AbortError'?'Request timed out.':e.message));
  }finally{clearTimeout(timeout);activityBusy=false;}
 }
 $('refreshActivity').onclick=()=>refreshActivity();
@@ -267,7 +271,7 @@ for(const id of ['server','token'])$(id).addEventListener('input',()=>{
  $('pollingMinus').disabled=true;$('pollingPlus').disabled=true;$('pollingValue').textContent='—';$('pollingStatus').textContent='Connect to load the current polling rate.';
  $('connectionStorage').textContent='Connection edited. Tap Save connection or use a control to save these changes.';
 });
-$('saveConnection').onclick=()=>action(async()=>{credentials();msg('Connection ready.');await refreshActivity();});
+$('saveConnection').onclick=()=>action(async()=>{credentials();await refreshActivity();if(activityConnected)$('connectionPanel').open=false;});
 $('forgetConnection').onclick=()=>{
  try{localStorage.removeItem(CONNECTION_KEY);}catch(e){$('connectionStorage').textContent='Saved connection could not be removed because device storage is unavailable.';return;}
  try{sessionStorage.removeItem('duo_server');}catch(e){}
@@ -296,10 +300,10 @@ $('connect').onclick=()=>action(async()=>{
  if(!sub)sub=await ready.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:publicKeyBytes(VAPID_PUBLIC_KEY)});
  const result=await api('/api/subscribe','POST',sub.toJSON());
  msg('iPhone subscribed! Tap Start monitoring to begin.');$('details').textContent=JSON.stringify(result,null,2);
- await refreshActivity();
+ await refreshActivity(true);
 });
-$('start').onclick=()=>action(async()=>{const r=await api('/api/start','POST',{});msg(r.cooldown_active?'Monitoring enabled. Apple requests remain paused until '+easternTime(r.cooldown_until)+'.':'Monitoring started. A push will confirm the start, followed by the first stock status.');$('details').textContent=JSON.stringify(r,null,2);await refreshActivity();});
-$('statusButton').onclick=()=>action(async()=>{const r=await api('/api/status');msg('Backend reachable.');$('details').textContent=JSON.stringify(r,null,2);await refreshActivity();});
-$('stop').onclick=()=>action(async()=>{const r=await api('/api/stop','POST',{});msg(r.already_stopped?'Monitoring is already stopped.':'Stop requested. A push will confirm when monitoring has stopped.');$('details').textContent=JSON.stringify(r,null,2);await refreshActivity();});
-if(restoreConnection())refreshActivity(true);
+$('start').onclick=()=>action(async()=>{const r=await api('/api/start','POST',{});msg(r.cooldown_active?'Monitoring enabled. Apple requests remain paused until '+easternTime(r.cooldown_until)+'.':'Monitoring started. A push will confirm the start, followed by the first stock status.');$('details').textContent=JSON.stringify(r,null,2);await refreshActivity(true);});
+$('statusButton').onclick=()=>action(async()=>{const r=await api('/api/status');msg('Backend reachable.');$('details').textContent=JSON.stringify(r,null,2);await refreshActivity(true);});
+$('stop').onclick=()=>action(async()=>{const r=await api('/api/stop','POST',{});msg(r.already_stopped?'Monitoring is already stopped.':'Stop requested. A push will confirm when monitoring has stopped.');$('details').textContent=JSON.stringify(r,null,2);await refreshActivity(true);});
+if(restoreConnection()){$('connectionPanel').open=false;refreshActivity(true);}
 </script></body></html>
