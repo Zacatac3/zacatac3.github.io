@@ -39,7 +39,7 @@ STATUS_INTERVAL_SECONDS = 4 * 60 * 60
 EASTERN = ZoneInfo('America/New_York')
 HISTORY_LIMIT = 1440
 BLOCK_STATUSES = {403, 429, 541}
-COOLDOWN_SECONDS = (15 * 60, 30 * 60, 60 * 60)
+COOLDOWN_SECONDS = (20 * 60, 30 * 60, 60 * 60)
 
 app = Flask(__name__)
 CORS(app, resources={r'/api/*': {'origins': [ALLOWED_ORIGIN], 'allow_headers': ['Authorization', 'Content-Type'], 'methods': ['GET', 'POST', 'OPTIONS']}})

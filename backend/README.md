@@ -14,7 +14,7 @@ service; monitoring must be started again after restarting the backend or Mac.
   as needed; decreases take effect after the pending scheduled check.
 - Any failed inventory check raises a selected interval below 60 seconds to 60.
   Rates of 60 or higher are preserved on failure and after cooldown recovery.
-  The existing 15/30/60-minute block backoff is unchanged. During cooldown you
+  The existing 20/30/60-minute block backoff is unchanged. During cooldown you
   may select 60 seconds or slower without changing the deadline; faster rates
   remain unavailable until successful recovery. The selected interval persists
   across restarts in ignored `backend/polling.json`.
@@ -48,7 +48,7 @@ service; monitoring must be started again after restarting the backend or Mac.
   phone delivery latency. The polling interval is 30–300 seconds, which can
   add up to that interval of detection delay before push delivery begins.
 - HTTP 541, 403, and 429 trigger a quiet period with no Apple inventory requests:
-  15 minutes after the first blocked response, then 30 minutes and 60 minutes
+  20 minutes after the first blocked response, then 30 minutes and 60 minutes
   after subsequent failed recovery probes, including timeouts or invalid
   responses that do not prove recovery. Longer `Retry-After` values are
   respected. Only one check is made after each quiet period. A successful check
@@ -123,3 +123,65 @@ Run the scheduling and notification checks without network access or pushes:
 cd backend
 .venv/bin/python -m unittest -v
 ```
+
+
+## Moving to another Mac
+
+Install Homebrew from https://brew.sh if needed, then install Python 3.11
+(the version used by the current backend) and Cloudflare Tunnel:
+
+```sh
+brew install python@3.11 cloudflared
+```
+
+VS Code, Node, Docker, and a local web server are not needed. The frontend
+continues to run on GitHub Pages; only Python and the tunnel run on the Mac.
+The Python packages are Flask, flask-cors, pywebpush, and requests, including
+their transitive dependencies, installed from `requirements.txt` below.
+
+You can privately zip and transfer the `backend` directory. Exclude `.venv`,
+`__pycache__`, and logs; recreate the virtual environment on the destination.
+Keep these files together:
+
+- `monitor.py`, `requirements.txt` (plus README/tests if desired).
+- `private_key.pem`: the existing VAPID private key, matching the public key in
+  the website. Reuse it for a migration; no new key pair is needed.
+- `admin_token.txt`: preserves the existing connection token. Without it,
+  Python creates a new token and you must update the iPhone connection.
+- `subscription.json`: preserves the iPhone push subscription. Without it,
+  use Enable iPhone notifications in the Home Screen app again.
+- `polling.json` and `cooldown.json`, if present: preserve the chosen interval
+  and any pending Apple cooldown. Do not discard cooldown state to retry sooner.
+
+The private key, token, and subscription are deliberately ignored by Git.
+A clone or GitHub ZIP contains source only and will not include these files.
+Transfer them privately (for example, AirDrop); do not commit or upload a
+migration ZIP to this public repository. The public key can remain public.
+If replacing the key pair, update the website public key too and re-subscribe
+from the iPhone. Do not run monitoring on both Macs during the handoff.
+Stop monitoring on the old Mac and stop its backend before taking the final
+copy, so the saved settings and cooldown are current.
+
+On the new Mac, from the folder containing `backend/`:
+
+```sh
+python3.11 -m venv backend/.venv
+backend/.venv/bin/python -m pip install -r backend/requirements.txt
+chmod 600 backend/private_key.pem backend/admin_token.txt backend/subscription.json
+backend/.venv/bin/python backend/monitor.py
+```
+
+If you omitted the token or subscription, leave the missing filename out of
+`chmod`. Python prints the admin token locally; keep it private.
+In a second terminal:
+
+```sh
+cloudflared tunnel --url http://127.0.0.1:8766
+```
+
+Save the newly printed HTTPS URL in the iPhone app with the existing token,
+check status, then start monitoring. The quick tunnel needs no Cloudflare
+account and creates a new URL each time. Keep both terminal processes running
+and the Mac awake. The backend binds to localhost, so no router port forwarding
+is needed. Existing persisted cooldown deadlines remain in effect; the new
+20/30/60-minute policy applies when the backend creates future cooldowns.

@@ -540,9 +540,9 @@ class MonitorTests(unittest.TestCase):
             monitor.run_monitor()
         self.assertEqual(sent, [('started', False), ('initial_status', True), ('stopped', True)])
 
-    def test_cooldown_escalates_15_30_60_minutes_and_resets_on_success(self):
+    def test_cooldown_escalates_20_30_60_minutes_and_resets_on_success(self):
         with patch.object(monitor, 'utc_now', return_value=STAMP):
-            for expected in (900, 1800, 3600, 3600):
+            for expected in (1200, 1800, 3600, 3600):
                 info = monitor.begin_cooldown(541)
                 self.assertEqual(info['cooldown_remaining_seconds'], expected)
                 self.assertTrue(info['cooldown_active'])
@@ -550,7 +550,7 @@ class MonitorTests(unittest.TestCase):
             monitor.clear_cooldown()
             self.assertFalse(monitor.COOLDOWN_FILE.exists())
             self.assertEqual(monitor.state['cooldown_attempts'], 0)
-            self.assertEqual(monitor.begin_cooldown(541)['cooldown_remaining_seconds'], 900)
+            self.assertEqual(monitor.begin_cooldown(541)['cooldown_remaining_seconds'], 1200)
 
     def test_cooldown_respects_longer_retry_after_seconds_and_date(self):
         with patch.object(monitor, 'utc_now', return_value=STAMP):
@@ -558,7 +558,7 @@ class MonitorTests(unittest.TestCase):
             monitor.clear_cooldown()
             self.assertEqual(monitor.begin_cooldown(541, 'Sat, 24 Oct 2026 23:34:56 GMT')['cooldown_remaining_seconds'], 10800)
             monitor.clear_cooldown()
-            self.assertEqual(monitor.begin_cooldown(541, 'not-a-date')['cooldown_remaining_seconds'], 900)
+            self.assertEqual(monitor.begin_cooldown(541, 'not-a-date')['cooldown_remaining_seconds'], 1200)
 
     def test_saved_cooldown_survives_reload_start_stop_and_mode_changes(self):
         with patch.object(monitor, 'utc_now', return_value=STAMP):
@@ -600,10 +600,10 @@ class MonitorTests(unittest.TestCase):
              patch.object(monitor, 'check_inventory', side_effect=check), \
              patch.object(monitor, 'send_notification', send), redirect_stdout(io.StringIO()):
             monitor.run_monitor()
-        self.assertEqual(times, [0, 900, 2700, 2760])
-        self.assertEqual(clock.waits, [900, 1800, 60, 60])
+        self.assertEqual(times, [0, 1200, 3000, 3060])
+        self.assertEqual(clock.waits, [1200, 1800, 60, 60])
         self.assertEqual([row for row in sent if row[1] not in ('started', 'stopped')],
-                         [(0, 'cooldown'), (900, 'cooldown'), (2700, 'recovered'), (2760, 'in_stock')])
+                         [(0, 'cooldown'), (1200, 'cooldown'), (3000, 'recovered'), (3060, 'in_stock')])
         self.assertEqual(monitor.state['cooldown_attempts'], 0)
 
     def test_stop_interrupts_cooldown_without_querying_apple_or_clearing_guard(self):
@@ -616,7 +616,7 @@ class MonitorTests(unittest.TestCase):
                  patch.object(monitor, 'check_inventory') as check, \
                  patch.object(monitor, 'send_lifecycle_notification'), redirect_stdout(io.StringIO()):
                 monitor.run_monitor()
-            event.wait.assert_called_once_with(900)
+            event.wait.assert_called_once_with(1200)
             check.assert_not_called()
             self.assertTrue(monitor.cooldown_info()['cooldown_active'])
             self.assertTrue(monitor.COOLDOWN_FILE.exists())
@@ -634,7 +634,7 @@ class MonitorTests(unittest.TestCase):
              patch.object(monitor, 'send_notification', side_effect=lambda *args: clock.utc_now()), \
              redirect_stdout(io.StringIO()):
             monitor.run_monitor()
-        self.assertEqual(clock.waits, [900, 1800, 60, 60])
+        self.assertEqual(clock.waits, [1200, 1800, 60, 60])
         self.assertEqual(check.call_count, 4)
         self.assertEqual(monitor.state['cooldown_attempts'], 0)
 
@@ -643,7 +643,7 @@ class MonitorTests(unittest.TestCase):
             monitor.begin_cooldown(541)
             client = monitor.app.test_client()
             data = client.get('/api/activity', headers={'Authorization': 'Bearer '+monitor.ADMIN_TOKEN}).json
-            self.assertEqual(data['cooldown_remaining_seconds'], 900)
+            self.assertEqual(data['cooldown_remaining_seconds'], 1200)
             payload = monitor.notification_payload(None, 'cooldown', STAMP)
             self.assertEqual(payload['title'], 'Duo · Apple cooldown')
             self.assertIn('HTTP 541', payload['body'])
@@ -664,7 +664,7 @@ class MonitorTests(unittest.TestCase):
                  patch.object(monitor, 'send_notification', return_value=clock.utc_now()), redirect_stdout(io.StringIO()):
                 monitor.run_monitor()
             check.assert_called_once()
-            self.assertEqual(clock.waits, [900])
+            self.assertEqual(clock.waits, [1200])
 
     def test_production_30_second_cadence_keeps_four_hour_status_schedule(self):
         self.assertEqual(monitor.CHECK_INTERVAL_SECONDS, 30)
@@ -738,8 +738,8 @@ class MonitorTests(unittest.TestCase):
              patch.object(monitor, 'send_notification', side_effect=lambda *args: clock.utc_now()), \
              redirect_stdout(io.StringIO()):
             monitor.run_monitor()
-        self.assertEqual(times, [0, 900, 960, 990])
-        self.assertEqual(clock.waits, [900, 60, 30, 30])
+        self.assertEqual(times, [0, 1200, 1260, 1290])
+        self.assertEqual(clock.waits, [1200, 60, 30, 30])
 
     def test_activity_exposes_the_selected_rate_and_fallback(self):
         monitor.state.update(check_interval_seconds=60, polling_fallback=True)
@@ -814,7 +814,7 @@ class MonitorTests(unittest.TestCase):
              patch.object(monitor,'send_notification',side_effect=lambda *args:clock.utc_now()), \
              redirect_stdout(io.StringIO()):
             monitor.run_monitor()
-        self.assertEqual(clock.waits,[900,90,90])
+        self.assertEqual(clock.waits,[1200,90,90])
         monitor.state['check_interval_seconds']=30
         monitor.load_polling()
         self.assertEqual(monitor.state['check_interval_seconds'],90)
