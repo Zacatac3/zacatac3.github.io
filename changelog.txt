@@ -1,3 +1,15 @@
+Title: 1.3.2 - 11/01/26
+
+Heading: What's New
+- Events now support supercharges, so time reductions to their upgrade times can be applied
+
+Heading: Changes and Fixes
+- The main builder widget layout was updated for iPhone Duo to fix visual issues
+- Events are now checked for more regularly, and can be force checked on app refresh
+- Deleted or modified events are now handled properly when the app fetches events
+
+===
+
 Title: 1.3.1 - 10/13/26
 
 Description: New Widget Size and bug Fixes

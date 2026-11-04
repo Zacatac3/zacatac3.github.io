@@ -3,3 +3,4 @@ backend/*
 !backend/requirements.txt
 !backend/test_monitor.py
 !backend/README.md
+!backend/setup.sh

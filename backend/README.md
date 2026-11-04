@@ -114,7 +114,7 @@ connection. If device storage is unavailable, the page reports that the
 connection can only be used for the current session.
 
 The private key, admin token, subscription, and virtual environment remain
-ignored by Git. Only backend source, requirements, documentation, and tests
+ignored by Git. Only backend source, setup script, requirements, documentation, and tests
 are allowed into version control. Keep backend secrets off GitHub Pages.
 
 Run the scheduling and notification checks without network access or pushes:
@@ -126,6 +126,22 @@ cd backend
 
 
 ## Moving to another Mac
+
+No source edits or Mac-specific paths are needed when keeping the same GitHub
+Pages website. Private files are resolved relative to `monitor.py`.
+After installing Python 3.11 or newer, run this from the repository root:
+
+```sh
+bash backend/setup.sh
+```
+
+This creates `.venv` if missing, installs all Python requirements, verifies
+dependencies, restricts permissions on transferred private files, and installs
+`cloudflared` through Homebrew if missing. If Homebrew is unavailable, it prints
+instructions instead. It does not generate keys, start the backend, subscribe
+the iPhone, or send inventory requests. It can also be rerun after pulling
+dependency changes. Do not transfer an old `.venv`; create it on the new Mac.
+For a specific Python executable, use `PYTHON_BIN=/path/to/python3 bash backend/setup.sh`.
 
 Install Homebrew from https://brew.sh if needed, then install Python 3.11
 (the version used by the current backend) and Cloudflare Tunnel:
