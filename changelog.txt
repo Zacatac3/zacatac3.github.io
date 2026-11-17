@@ -1,3 +1,21 @@
+Title: 1.4 - 11/16/26
+
+Description: Town Hall 19 Update + better support for Multi Account Users
+
+Heading: What's New
+- Added new widgets to display upgrades for multiple accounts at once
+- Includes a 4x4 variant for more details
+- Prioritize up to 6 villages to have them take priority on the multi-account widget
+- Customizable; can select which accounts show up, toggle lab, pet, and builder upgrades
+- New reorder and prioritize option for profiles in settings
+- Added TH19 game content, including squads, squad barracks, spike tower, firecracker tower, and the heroic spell
+
+Heading: Changes and Fixes
+- Major backend performance improvements
+- Fixed many areas that cause temporary lag spikes or scroll lag
+
+===
+
 Title: 1.3.2 - 11/01/26
 
 Heading: What's New
